@@ -19,7 +19,12 @@ import com.example.tuner.data.model.Channel
  * Both are restored on exit via [DisposableEffect].
  */
 @Composable
-fun FullScreenPlayerHost(channel: Channel, onExit: () -> Unit) {
+fun FullScreenPlayerHost(
+    channel: Channel,
+    onExit: () -> Unit,
+    isFavorite: Boolean = false,
+    onToggleFavorite: (() -> Unit)? = null
+) {
     val view = LocalView.current
     val activity = LocalContext.current as? Activity
 
@@ -51,6 +56,8 @@ fun FullScreenPlayerHost(channel: Channel, onExit: () -> Unit) {
         onBack = onExit,
         isFullScreen = true,
         onToggleFullScreen = onExit,
+        isFavorite = isFavorite,
+        onToggleFavorite = onToggleFavorite,
         modifier = Modifier.fillMaxSize()
     )
 }

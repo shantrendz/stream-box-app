@@ -164,6 +164,28 @@ class ChannelListViewModel(
         reloadCatalog()
     }
 
+    /** Tapping the "StreamBox" title jumps straight back to the default, unfiltered catalog —
+     * clears Region/Category/Language back to "All" and any search text, whatever mode
+     * (Favorites/History/Custom sources/filtered Catalog) the user was in. */
+    fun resetToAllChannels() {
+        localModeJob?.cancel()
+        _uiState.update {
+            it.copy(
+                topMode = TopMode.CATALOG,
+                region = PlaylistSource.REGIONS.first(),
+                category = PlaylistSource.CATEGORIES.first(),
+                language = PlaylistSource.LANGUAGES.first(),
+                filterText = ""
+            )
+        }
+        viewModelScope.launch {
+            appStateRepository.saveTopMode(TopMode.CATALOG)
+            appStateRepository.saveFilterText("")
+        }
+        persistCatalogSelection()
+        reloadCatalog()
+    }
+
     /** Re-fetches using the current Region + Category + Language selection (combined filters). */
     fun reloadCatalog() {
         val requestId = ++loadRequestId

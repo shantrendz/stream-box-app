@@ -11,13 +11,17 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Copyright
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -31,19 +35,25 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import com.example.tuner.ui.channels.ChannelListViewModel
 import com.example.tuner.ui.components.AppIcon
+import com.example.tuner.ui.components.NowPlayingBanner
+import androidx.compose.ui.graphics.Brush
 import com.example.tuner.ui.theme.ThemeMode
 import com.example.tuner.ui.theme.TunerAmber
 import com.example.tuner.ui.theme.TunerBackground
 import com.example.tuner.ui.theme.TunerCyan
+import com.example.tuner.ui.theme.TunerGradientBottom
+import com.example.tuner.ui.theme.TunerGradientTop
 import com.example.tuner.ui.theme.TunerOutline
 import com.example.tuner.ui.theme.TunerRed
 import com.example.tuner.ui.theme.TunerTextPrimary
@@ -58,6 +68,12 @@ fun SettingsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val uriHandler = LocalUriHandler.current
+    val context = LocalContext.current
+    val appVersionName = remember {
+        runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }
+            .getOrNull() ?: "1.0"
+    }
+    val currentYear = remember { java.util.Calendar.getInstance().get(java.util.Calendar.YEAR) }
 
     Column(
         modifier = modifier
@@ -68,6 +84,7 @@ fun SettingsScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .background(Brush.verticalGradient(listOf(TunerGradientTop, TunerGradientBottom)))
                 .padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -75,14 +92,24 @@ fun SettingsScreen(
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = TunerTextPrimary)
             }
             Text(
-                text = "SETTINGS",
+                text = "Settings",
                 style = MaterialTheme.typography.titleLarge,
                 color = TunerAmber,
                 fontWeight = FontWeight.Bold
             )
         }
 
-        SectionHeader("THEME")
+        uiState.selectedChannel?.let { channel ->
+            NowPlayingBanner(
+                channelName = channel.name,
+                onClick = onBack,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            )
+        }
+
+        SectionHeader("Theme")
         Column(Modifier.selectableGroup()) {
             ThemeMode.entries.forEach { mode ->
                 ThemeOptionRow(
@@ -97,7 +124,8 @@ fun SettingsScreen(
             }
         }
 
-        SectionHeader("WATCH HISTORY")
+        Spacer(Modifier.height(28.dp))
+        SectionHeader("Watch History")
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -141,25 +169,21 @@ fun SettingsScreen(
             }
         }
 
-        SectionHeader("ABOUT")
+        Spacer(Modifier.height(28.dp))
+        SectionHeader("About")
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            AppIcon(size = 40.dp)
+            AppIcon(size = 56.dp)
             Column(modifier = Modifier.padding(start = 12.dp)) {
                 Text(
                     text = "StreamBox",
                     style = MaterialTheme.typography.titleMedium,
                     color = TunerAmber,
                     fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "Developed by Shanavas Abdul Samad",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = TunerTextPrimary
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
@@ -169,8 +193,25 @@ fun SettingsScreen(
                     textDecoration = TextDecoration.Underline,
                     modifier = Modifier.clickable { uriHandler.openUri("https://shanavas.dev") }
                 )
+                Spacer(Modifier.height(6.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Filled.Copyright,
+                        contentDescription = null,
+                        tint = TunerTextSecondary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = "$currentYear StreamBox  ·  v$appVersionName",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TunerTextSecondary
+                    )
+                }
             }
         }
+
+        Spacer(Modifier.height(16.dp))
     }
 }
 
@@ -188,10 +229,13 @@ private fun SectionHeader(title: String) {
 
 @Composable
 private fun ThemeOptionRow(label: String, selected: Boolean, onSelect: () -> Unit) {
+    val shape = RoundedCornerShape(12.dp)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .border(width = 1.dp, color = TunerOutline)
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .clip(shape)
+            .border(width = if (selected) 1.5.dp else 1.dp, color = if (selected) TunerAmber else TunerOutline, shape = shape)
             .selectable(selected = selected, onClick = onSelect)
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically

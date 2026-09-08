@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
@@ -55,11 +57,14 @@ fun ChannelRow(
     onToggleFavorite: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val rowShape = RoundedCornerShape(12.dp)
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .background(if (isSelected) TunerAmberTint else MaterialTheme.colorScheme.background)
-            .border(width = 1.dp, color = TunerOutline)
+            .padding(horizontal = 8.dp, vertical = 3.dp)
+            .clip(rowShape)
+            .background(if (isSelected) TunerAmberTint else MaterialTheme.colorScheme.surface)
+            .border(width = if (isSelected) 1.5.dp else 1.dp, color = if (isSelected) TunerAmber else TunerOutline, shape = rowShape)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically

@@ -1,6 +1,7 @@
 package com.example.tuner
 
 import android.app.Application
+import com.example.tuner.cast.CastSessionManager
 import com.example.tuner.data.repository.AppStateRepository
 import com.example.tuner.data.repository.ChannelRepository
 import com.example.tuner.data.repository.CustomSourceRepository
@@ -23,6 +24,8 @@ class TunerApplication : Application() {
         private set
     lateinit var historyRepository: HistoryRepository
         private set
+    lateinit var castSessionManager: CastSessionManager
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -31,5 +34,6 @@ class TunerApplication : Application() {
         appStateRepository = AppStateRepository(applicationContext)
         favoritesRepository = FavoritesRepository(applicationContext)
         historyRepository = HistoryRepository(applicationContext)
+        castSessionManager = CastSessionManager(applicationContext)
     }
 }

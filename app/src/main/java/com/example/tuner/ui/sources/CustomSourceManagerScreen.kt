@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
@@ -41,9 +43,13 @@ import androidx.compose.ui.unit.dp
 import com.example.tuner.data.model.CustomSource
 import com.example.tuner.data.model.SourceLoadStatus
 import com.example.tuner.ui.channels.ChannelListViewModel
+import com.example.tuner.ui.components.NowPlayingBanner
+import androidx.compose.ui.graphics.Brush
 import com.example.tuner.ui.theme.TunerAmber
 import com.example.tuner.ui.theme.TunerBackground
 import com.example.tuner.ui.theme.TunerCyan
+import com.example.tuner.ui.theme.TunerGradientBottom
+import com.example.tuner.ui.theme.TunerGradientTop
 import com.example.tuner.ui.theme.TunerOutline
 import com.example.tuner.ui.theme.TunerRed
 import com.example.tuner.ui.theme.TunerTextPrimary
@@ -72,6 +78,7 @@ fun CustomSourceManagerScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .background(Brush.verticalGradient(listOf(TunerGradientTop, TunerGradientBottom)))
                 .padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -79,10 +86,20 @@ fun CustomSourceManagerScreen(
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = TunerTextPrimary)
             }
             Text(
-                text = "CUSTOM SOURCES",
+                text = "Custom Sources",
                 style = MaterialTheme.typography.titleLarge,
                 color = TunerAmber,
                 fontWeight = FontWeight.Bold
+            )
+        }
+
+        uiState.selectedChannel?.let { channel ->
+            NowPlayingBanner(
+                channelName = channel.name,
+                onClick = onBack,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
             )
         }
 
@@ -153,10 +170,14 @@ private fun SourceForm(
     var url by remember { mutableStateOf(initial?.url ?: "") }
     var showUrlError by remember { mutableStateOf(false) }
 
+    val formShape = RoundedCornerShape(14.dp)
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, TunerOutline)
+            .padding(horizontal = 12.dp, vertical = 4.dp)
+            .clip(formShape)
+            .background(MaterialTheme.colorScheme.surface)
+            .border(1.dp, TunerOutline, formShape)
             .padding(12.dp)
     ) {
         OutlinedTextField(
@@ -228,10 +249,14 @@ private fun SourceRow(
     onRemove: () -> Unit,
     onRetry: () -> Unit
 ) {
+    val rowShape = RoundedCornerShape(12.dp)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .border(width = 1.dp, color = TunerOutline)
+            .padding(horizontal = 12.dp, vertical = 4.dp)
+            .clip(rowShape)
+            .background(MaterialTheme.colorScheme.surface)
+            .border(width = 1.dp, color = TunerOutline, shape = rowShape)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
