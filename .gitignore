@@ -12,3 +12,8 @@ app/build/
 app/release/
 *.hprof
 *.log
+
+# Signing keys — never commit
+/keystore/
+*.jks
+*.keystore
