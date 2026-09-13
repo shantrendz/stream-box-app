@@ -22,6 +22,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.tuner.ui.channels.ChannelListUiState
 import com.example.tuner.ui.channels.ChannelListViewModel
@@ -44,11 +45,21 @@ fun ParentalControlSection(uiState: ChannelListUiState, viewModel: ChannelListVi
             Button(onClick = { flowStart = ParentalFlowStart.SETUP }, colors = amberButton) { Text("SET UP") }
         }
 
-        !uiState.parentUnlocked -> SettingRow(
-            title = "Parental control is on",
-            subtitle = if (uiState.kidsMode) "Kids Mode is active." else "Unlock to turn on Kids Mode or manage channels."
-        ) {
-            Button(onClick = { flowStart = ParentalFlowStart.UNLOCK }, colors = amberButton) { Text("UNLOCK") }
+        !uiState.parentUnlocked -> {
+            SettingRow(
+                title = "Parental control is on",
+                subtitle = if (uiState.kidsMode) "Kids Mode is active." else "Unlock to turn on Kids Mode or manage channels."
+            ) {
+                Button(onClick = { flowStart = ParentalFlowStart.UNLOCK }, colors = amberButton) { Text("UNLOCK") }
+            }
+            if (!uiState.kidsMode) {
+                SettingRow(
+                    title = "Kids Mode",
+                    subtitle = "Turn on now — turning it off will need the PIN."
+                ) {
+                    Button(onClick = { viewModel.setKidsMode(true) }, colors = amberButton) { Text("TURN ON") }
+                }
+            }
         }
 
         else -> {
@@ -77,17 +88,23 @@ fun ParentalControlSection(uiState: ChannelListUiState, viewModel: ChannelListVi
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 OutlinedButton(onClick = { flowStart = ParentalFlowStart.CHANGE_PIN }, modifier = Modifier.weight(1f)) {
-                    Text("CHANGE PIN", color = TunerTextPrimary, maxLines = 1)
+                    Text("CHANGE PIN", color = TunerTextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 OutlinedButton(onClick = viewModel::lockParent, modifier = Modifier.weight(1f)) {
-                    Text("LOCK", color = TunerTextPrimary, maxLines = 1)
+                    Text("LOCK", color = TunerTextPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp)
+            ) {
                 Button(
                     onClick = viewModel::disableParentalControl,
                     colors = ButtonDefaults.buttonColors(containerColor = TunerRed, contentColor = Color.Black),
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("TURN OFF", maxLines = 1)
+                    Text("TURN OFF", maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }
