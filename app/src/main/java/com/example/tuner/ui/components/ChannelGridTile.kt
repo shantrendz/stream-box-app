@@ -25,6 +25,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -64,6 +66,7 @@ fun ChannelGridTile(
                 .background(if (isSelected) TunerAmberTint else TunerSurface)
                 .border(width = if (isSelected) 1.5.dp else 1.dp, color = if (isSelected) TunerAmber else TunerOutline, shape = TileShape)
                 .clickable(onClick = onClick)
+                .semantics { stateDescription = liveStatusDescription(liveStatus) }
                 .padding(10.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {

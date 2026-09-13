@@ -15,8 +15,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.tuner.livecheck.LiveStatus
@@ -24,19 +23,22 @@ import com.example.tuner.ui.theme.TunerGreen
 import com.example.tuner.ui.theme.TunerRed
 import com.example.tuner.ui.theme.TunerTextSecondary
 
+/** Human-readable description of a [LiveStatus], used both for the dot and for the row/tile's stateDescription. */
+fun liveStatusDescription(status: LiveStatus): String = when (status) {
+    LiveStatus.UNCHECKED -> "Stream not checked yet"
+    LiveStatus.CHECKING -> "Checking stream"
+    LiveStatus.WORKING -> "Stream working"
+    LiveStatus.NOT_WORKING -> "Stream not working"
+}
+
 /** Live Check result: hollow = not checked, pulsing grey = checking, green = working, red = not working. */
 @Composable
 fun LiveStatusDot(status: LiveStatus, modifier: Modifier = Modifier, size: Dp = 8.dp) {
-    val description = when (status) {
-        LiveStatus.UNCHECKED -> "Stream not checked yet"
-        LiveStatus.CHECKING -> "Checking stream"
-        LiveStatus.WORKING -> "Stream working"
-        LiveStatus.NOT_WORKING -> "Stream not working"
-    }
     val base = modifier
         .size(size)
         .clip(CircleShape)
-        .semantics { contentDescription = description }
+        // Decorative: the parent row/tile announces status once via stateDescription instead.
+        .clearAndSetSemantics { }
 
     when (status) {
         LiveStatus.UNCHECKED -> Box(base.border(1.5.dp, TunerTextSecondary, CircleShape))
