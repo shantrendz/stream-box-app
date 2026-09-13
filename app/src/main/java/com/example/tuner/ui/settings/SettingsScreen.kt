@@ -48,6 +48,7 @@ import com.example.tuner.ui.channels.ChannelListViewModel
 import com.example.tuner.ui.components.AppIcon
 import com.example.tuner.ui.components.NowPlayingBanner
 import androidx.compose.ui.graphics.Brush
+import com.example.tuner.ui.parental.ParentalControlSection
 import com.example.tuner.ui.theme.ThemeMode
 import com.example.tuner.ui.theme.TunerAmber
 import com.example.tuner.ui.theme.TunerBackground
@@ -168,6 +169,10 @@ fun SettingsScreen(
                 Text("CLEAR")
             }
         }
+
+        Spacer(Modifier.height(28.dp))
+        SectionHeader("Parental Control")
+        ParentalControlSection(uiState = uiState, viewModel = viewModel)
 
         Spacer(Modifier.height(28.dp))
         SectionHeader("About")
