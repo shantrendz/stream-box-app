@@ -139,4 +139,21 @@ class LiveCheckRepositoryTest {
         runCurrent()
         assertEquals(2, prober.probed.size)
     }
+
+    @Test
+    fun `a probe that throws is recorded as not working and the worker keeps going`() = runTest {
+        val prober = object : StreamProbe {
+            override suspend fun probe(url: String): LiveStatus {
+                if (url == "bad") throw IllegalStateException("boom")
+                return LiveStatus.WORKING
+            }
+        }
+        val repo = LiveCheckRepository(prober, backgroundScope, maxConcurrent = 1)
+
+        repo.request(listOf("bad", "good"))
+        runCurrent()
+
+        assertEquals(LiveStatus.NOT_WORKING, repo.statuses.value["bad"])
+        assertEquals(LiveStatus.WORKING, repo.statuses.value["good"])
+    }
 }
