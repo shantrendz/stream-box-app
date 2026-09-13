@@ -1,30 +1,36 @@
 package com.example.tuner.ui.parental
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.example.tuner.data.repository.PinResult
 import com.example.tuner.parental.ChallengeDifficulty
+import kotlinx.coroutines.delay
 
-enum class ParentalFlowStart { SETUP, UNLOCK, CHANGE_PIN }
+enum class ParentalFlowStart { SETUP, UNLOCK, CHANGE_PIN, RECOVERY }
 
 private enum class FlowStep { SETUP_CHALLENGE, RECOVERY_CHALLENGE, UNLOCK, CHOOSE_PIN, CONFIRM_PIN }
+
+private const val LOCKOUT_MESSAGE = "Too many wrong tries — try again shortly"
 
 /**
  * One dialog at a time, walking through:
  * - SETUP: math problem → choose PIN → confirm PIN
  * - UNLOCK: PIN pad ("Forgot PIN?" → harder math problem → choose PIN → confirm PIN)
  * - CHANGE_PIN: choose PIN → confirm PIN
+ * - RECOVERY: harder math problem → choose PIN → confirm PIN (Kids Mode on but no PIN saved)
  * [onFinished] gets true when the parent ends up unlocked, false on cancel.
+ * [onSetPin] must call its callback once the PIN is saved; the flow finishes only then.
  */
 @Composable
 fun ParentalAuthFlow(
     start: ParentalFlowStart,
     lockoutUntil: Long,
     onVerifyPin: (String, (PinResult) -> Unit) -> Unit,
-    onSetPin: (String) -> Unit,
+    onSetPin: (String, () -> Unit) -> Unit,
     onFinished: (success: Boolean) -> Unit
 ) {
     var step by remember {
@@ -33,6 +39,7 @@ fun ParentalAuthFlow(
                 ParentalFlowStart.SETUP -> FlowStep.SETUP_CHALLENGE
                 ParentalFlowStart.UNLOCK -> FlowStep.UNLOCK
                 ParentalFlowStart.CHANGE_PIN -> FlowStep.CHOOSE_PIN
+                ParentalFlowStart.RECOVERY -> FlowStep.RECOVERY_CHALLENGE
             }
         )
     }
@@ -40,6 +47,7 @@ fun ParentalAuthFlow(
     var message by remember { mutableStateOf<String?>(null) }
     var isError by remember { mutableStateOf(false) }
     var verifying by remember { mutableStateOf(false) }
+    var saving by remember { mutableStateOf(false) }
     var finished by remember { mutableStateOf(false) }
 
     fun goTo(next: FlowStep, newMessage: String? = null, error: Boolean = false) {
@@ -67,35 +75,46 @@ fun ParentalAuthFlow(
             onSolved = { goTo(FlowStep.CHOOSE_PIN) },
             onDismiss = cancel
         )
-        FlowStep.UNLOCK -> PinPadDialog(
-            title = "Enter parent PIN",
-            message = message,
-            isError = isError,
-            lockoutUntil = lockoutUntil,
-            onPinEntered = { pin ->
-                if (!verifying) {
-                    verifying = true
-                    onVerifyPin(pin) { result ->
-                        verifying = false
-                        if (finished || step != FlowStep.UNLOCK) return@onVerifyPin
-                        when (result) {
-                            PinResult.Ok -> finish(true)
-                            is PinResult.Wrong -> {
-                                message = "Wrong PIN — ${result.attemptsLeft} tries left"
-                                isError = true
-                            }
-                            is PinResult.LockedOut -> {
-                                message = "Too many wrong tries — try again shortly"
-                                isError = true
+        FlowStep.UNLOCK -> {
+            // Once the lockout countdown ends, don't leave the lockout message behind.
+            LaunchedEffect(lockoutUntil) {
+                val remaining = lockoutUntil - System.currentTimeMillis()
+                if (remaining > 0) delay(remaining)
+                if (message == LOCKOUT_MESSAGE) {
+                    message = null
+                    isError = false
+                }
+            }
+            PinPadDialog(
+                title = "Enter parent PIN",
+                message = message,
+                isError = isError,
+                lockoutUntil = lockoutUntil,
+                onPinEntered = { pin ->
+                    if (!verifying) {
+                        verifying = true
+                        onVerifyPin(pin) { result ->
+                            verifying = false
+                            if (finished || step != FlowStep.UNLOCK) return@onVerifyPin
+                            when (result) {
+                                PinResult.Ok -> finish(true)
+                                is PinResult.Wrong -> {
+                                    message = "Wrong PIN — ${result.attemptsLeft} tries left"
+                                    isError = true
+                                }
+                                is PinResult.LockedOut -> {
+                                    message = LOCKOUT_MESSAGE
+                                    isError = true
+                                }
                             }
                         }
                     }
-                }
-            },
-            onDismiss = cancel,
-            onForgotPin = { goTo(FlowStep.RECOVERY_CHALLENGE) },
-            inputEnabled = !verifying
-        )
+                },
+                onDismiss = cancel,
+                onForgotPin = { goTo(FlowStep.RECOVERY_CHALLENGE) },
+                inputEnabled = !verifying
+            )
+        }
         FlowStep.CHOOSE_PIN -> PinPadDialog(
             title = "Choose a 4-digit PIN",
             message = message,
@@ -113,15 +132,18 @@ fun ParentalAuthFlow(
             isError = false,
             lockoutUntil = 0L,
             onPinEntered = { pin ->
+                if (saving) return@PinPadDialog
                 if (pin == chosenPin) {
-                    onSetPin(pin)
-                    finish(true)
+                    // Wait for the PIN to be saved (and the parent unlocked) before finishing.
+                    saving = true
+                    onSetPin(pin) { finish(true) }
                 } else {
                     chosenPin = ""
                     goTo(FlowStep.CHOOSE_PIN, "PINs didn't match — choose again", error = true)
                 }
             },
-            onDismiss = cancel
+            onDismiss = cancel,
+            inputEnabled = !saving
         )
     }
 }

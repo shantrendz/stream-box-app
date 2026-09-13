@@ -74,10 +74,13 @@ private fun TunerApp(viewModel: ChannelListViewModel) {
     var showSplash by remember { mutableStateOf(true) }
     val uiState by viewModel.uiState.collectAsState()
 
-    // If the parent session ends (app backgrounded, 10 min timeout) while Settings or the
-    // custom-source manager is open in Kids Mode, don't leave the child sitting on it.
-    LaunchedEffect(uiState.kidsMode, uiState.parentUnlocked) {
-        if (uiState.kidsMode && !uiState.parentUnlocked) screen = Screen.CHANNELS
+    // In Kids Mode without the parent unlocked only the channel list is ever shown — checked on
+    // every composition, so a parent session ending (app backgrounded, 10 min timeout) or any
+    // screen switch can't leave the child on Settings or the custom-source manager.
+    val effectiveScreen = if (uiState.kidsMode && !uiState.parentUnlocked) Screen.CHANNELS else screen
+    // Also reset the remembered screen, so unlocking later doesn't unexpectedly reopen Settings.
+    LaunchedEffect(effectiveScreen, screen) {
+        if (effectiveScreen != screen) screen = Screen.CHANNELS
     }
 
     // App content draws edge-to-edge (enableEdgeToEdge()), so pad the status bar in here
@@ -92,7 +95,7 @@ private fun TunerApp(viewModel: ChannelListViewModel) {
         return
     }
 
-    when (screen) {
+    when (effectiveScreen) {
         Screen.CUSTOM_SOURCES -> CustomSourceManagerScreen(
             viewModel = viewModel,
             onBack = { screen = Screen.CHANNELS },

@@ -76,7 +76,7 @@ data class ChannelListUiState(
             kidsTab == KidsTab.CHANNELS -> kidsVisibleChannels
             else -> {
                 val allowed = kidsVisibleChannels.mapTo(HashSet()) { it.streamUrl }
-                loadedChannels.filter { it.streamUrl in allowed }
+                loadedChannels.filter { it.streamUrl in allowed }.distinctBy { it.streamUrl }
             }
         }
 
@@ -173,20 +173,25 @@ class ChannelListViewModel(
 
     private fun restoreLastState() {
         viewModelScope.launch {
-            val savedFilter = appStateRepository.lastFilterText.first()
-            _uiState.update { it.copy(filterText = savedFilter) }
+            // Check Kids Mode first so the normal toolbar never shows at cold start.
+            val kidsModeEnabled = parentalControlRepository.state.first().kidsModeEnabled
+            if (kidsModeEnabled) enterKidsMode()
 
+            if (!kidsModeEnabled) {
+                val savedFilter = appStateRepository.lastFilterText.first()
+                _uiState.update { it.copy(filterText = savedFilter) }
+            }
+
+            // Restored even in Kids Mode (not visible there) so leaving Kids Mode reloads the
+            // saved catalog selection instead of the defaults.
             val saved = appStateRepository.lastCatalogState.first()
             val region = PlaylistSource.REGIONS.firstOrNull { it.code == saved.regionCode } ?: PlaylistSource.REGIONS.first()
             val category = PlaylistSource.CATEGORIES.firstOrNull { it.slug == saved.categorySlug } ?: PlaylistSource.CATEGORIES.first()
             val language = PlaylistSource.LANGUAGES.firstOrNull { it.code == saved.languageCode } ?: PlaylistSource.LANGUAGES.first()
             _uiState.update { it.copy(region = region, category = category, language = language) }
 
-            if (parentalControlRepository.state.first().kidsModeEnabled) {
-                enterKidsMode()
-            } else {
-                applyTopMode(saved.topMode)
-            }
+            if (kidsModeEnabled) return@launch
+            applyTopMode(saved.topMode)
         }
     }
 
@@ -202,7 +207,20 @@ class ChannelListViewModel(
     private fun enterKidsMode() {
         localModeJob?.cancel()
         _uiState.update {
-            it.copy(kidsMode = true, kidsTab = KidsTab.CHANNELS, filterText = "", customSourcesStatusMessage = null)
+            // Stop a non-kids channel right away rather than after the kids catalog download.
+            // Only parent-approved, not-hidden channels are known to be kids channels before it loads.
+            val selected = it.selectedChannel
+            val keepSelected = selected != null &&
+                selected.streamUrl !in it.hiddenKidsUrls &&
+                it.approvedKidsChannels.any { approved -> approved.streamUrl == selected.streamUrl }
+            it.copy(
+                kidsMode = true,
+                kidsTab = KidsTab.CHANNELS,
+                filterText = "",
+                customSourcesStatusMessage = null,
+                loadErrorMessage = null,
+                selectedChannel = if (keepSelected) selected else null
+            )
         }
         reloadKidsCatalog()
     }
@@ -456,12 +474,28 @@ class ChannelListViewModel(
 
     // --- Parental control ---
 
-    fun setParentPin(pin: String) {
-        viewModelScope.launch { parentalControlRepository.setPin(pin) }
+    /** [onDone] runs on the main thread once the PIN is saved and the parent is unlocked. */
+    fun setParentPin(pin: String, onDone: () -> Unit) {
+        viewModelScope.launch {
+            parentalControlRepository.setPin(pin)
+            syncParentUnlocked()
+            onDone()
+        }
     }
 
     fun verifyParentPin(pin: String, onResult: (PinResult) -> Unit) {
-        viewModelScope.launch { onResult(parentalControlRepository.verifyPin(pin)) }
+        viewModelScope.launch {
+            val result = parentalControlRepository.verifyPin(pin)
+            syncParentUnlocked()
+            onResult(result)
+        }
+    }
+
+    // The parentUnlocked collector updates uiState asynchronously; copy the value now so a
+    // callback that navigates (e.g. opens Settings) never sees a stale "locked" state.
+    private fun syncParentUnlocked() {
+        val unlocked = parentalControlRepository.parentUnlocked.value
+        _uiState.update { it.copy(parentUnlocked = unlocked) }
     }
 
     fun lockParent() = parentalControlRepository.lock()
@@ -475,7 +509,12 @@ class ChannelListViewModel(
     }
 
     fun onKidsShieldClick(channel: Channel) {
-        val shieldState = _uiState.value.kidsShieldStateFor(channel)
+        val state = _uiState.value
+        val shieldState = state.kidsShieldStateFor(channel)
+        // Hiding the channel that's playing in Kids Mode stops it immediately.
+        if (shieldState == KidsShieldState.VISIBLE_IN_KIDS && state.selectedChannel?.streamUrl == channel.streamUrl) {
+            clearSelectedChannel()
+        }
         viewModelScope.launch {
             when (shieldState) {
                 KidsShieldState.VISIBLE_IN_KIDS -> parentalControlRepository.hideFromKids(channel)

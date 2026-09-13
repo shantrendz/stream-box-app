@@ -127,7 +127,12 @@ fun ChannelListScreen(
 
         if (showParentGate) {
             ParentalAuthFlow(
-                start = if (uiState.hasParentPin) ParentalFlowStart.UNLOCK else ParentalFlowStart.SETUP,
+                // Kids Mode on without a saved PIN is a recovery, so it gets the harder problem.
+                start = when {
+                    uiState.hasParentPin -> ParentalFlowStart.UNLOCK
+                    uiState.kidsMode -> ParentalFlowStart.RECOVERY
+                    else -> ParentalFlowStart.SETUP
+                },
                 lockoutUntil = uiState.pinLockoutUntil,
                 onVerifyPin = viewModel::verifyParentPin,
                 onSetPin = viewModel::setParentPin,

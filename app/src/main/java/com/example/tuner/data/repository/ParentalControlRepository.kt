@@ -148,9 +148,12 @@ class ParentalControlRepository(
 
     /** Turning Kids Mode on needs a PIN to exist; turning it off needs the parent unlocked. */
     suspend fun setKidsMode(enabled: Boolean) {
-        if (enabled && !state.first().hasPin) return
         if (!enabled && !_parentUnlocked.value) return
-        context.parentalDataStore.edit { it[kidsModeKey] = enabled }
+        context.parentalDataStore.edit { prefs ->
+            // Checked inside the edit so a PIN removed concurrently can't be raced.
+            val hasPin = prefs[pinHashKey] != null && prefs[pinSaltKey] != null
+            if (!enabled || hasPin) prefs[kidsModeKey] = enabled
+        }
     }
 
     suspend fun hideFromKids(channel: Channel) = updateKidsLists { it.hide(channel) }
