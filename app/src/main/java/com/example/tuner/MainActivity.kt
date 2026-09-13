@@ -55,6 +55,13 @@ class MainActivity : FragmentActivity() {
             }
         }
     }
+
+    // Parent unlock is meant for "the parent is holding the phone right now" — once the app
+    // leaves the foreground, the next person to open it has to enter the PIN again.
+    override fun onStop() {
+        super.onStop()
+        (application as TunerApplication).parentalControlRepository.lock()
+    }
 }
 
 private enum class Screen { CHANNELS, CUSTOM_SOURCES, SETTINGS }

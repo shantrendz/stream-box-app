@@ -7,6 +7,7 @@ import com.example.tuner.data.repository.ChannelRepository
 import com.example.tuner.data.repository.CustomSourceRepository
 import com.example.tuner.data.repository.FavoritesRepository
 import com.example.tuner.data.repository.HistoryRepository
+import com.example.tuner.data.repository.ParentalControlRepository
 
 /**
  * Lightweight manual DI container — no Hilt needed for a repository graph this small.
@@ -26,6 +27,8 @@ class TunerApplication : Application() {
         private set
     lateinit var castSessionManager: CastSessionManager
         private set
+    lateinit var parentalControlRepository: ParentalControlRepository
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -35,5 +38,6 @@ class TunerApplication : Application() {
         favoritesRepository = FavoritesRepository(applicationContext)
         historyRepository = HistoryRepository(applicationContext)
         castSessionManager = CastSessionManager(applicationContext)
+        parentalControlRepository = ParentalControlRepository(applicationContext)
     }
 }
