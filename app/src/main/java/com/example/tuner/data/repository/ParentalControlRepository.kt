@@ -115,8 +115,12 @@ class ParentalControlRepository(
 
         val salt = prefs[pinSaltKey]?.let { runCatching { PinHasher.fromHex(it) }.getOrNull() }
         val hash = prefs[pinHashKey]?.let { runCatching { PinHasher.fromHex(it) }.getOrNull() }
-        val matches = salt != null && hash != null &&
-            withContext(Dispatchers.Default) { PinHasher.verify(pin, salt, hash) }
+        if (salt == null || hash == null) {
+            // No PIN set (or it failed to decode) — there is nothing to lock out against, so
+            // this must not touch failed_attempts/lockout_until or count as a real attempt.
+            return PinResult.Wrong(LockoutPolicy.MAX_ATTEMPTS)
+        }
+        val matches = withContext(Dispatchers.Default) { PinHasher.verify(pin, salt, hash) }
 
         if (matches) {
             context.parentalDataStore.edit { it[failedAttemptsKey] = 0; it[lockoutUntilKey] = 0L }
