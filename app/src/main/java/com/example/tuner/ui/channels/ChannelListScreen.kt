@@ -371,14 +371,20 @@ private fun ChannelListPane(
         )
 
         val matched = uiState.searchMatchedChannels
-        val checkedCount = matched.count {
-            val status = uiState.liveStatuses[it.streamUrl]
-            status == LiveStatus.WORKING || status == LiveStatus.NOT_WORKING
+        val checkedCount = remember(uiState.liveOnly, uiState.liveStatuses, matched) {
+            if (!uiState.liveOnly) {
+                0
+            } else {
+                matched.count {
+                    val status = uiState.liveStatuses[it.streamUrl]
+                    status == LiveStatus.WORKING || status == LiveStatus.NOT_WORKING
+                }
+            }
         }
         val stillChecking = uiState.liveOnly && matched.isNotEmpty() && checkedCount < matched.size
 
         // While Live only is on, keep the whole list queued even if nothing is visible yet.
-        LaunchedEffect(uiState.liveOnly, matched.size, uiState.topMode, uiState.kidsMode, uiState.kidsTab) {
+        LaunchedEffect(uiState.liveOnly, uiState.loadedChannels, uiState.kidsCatalog, uiState.filterText, uiState.kidsMode, uiState.kidsTab) {
             if (uiState.liveOnly) viewModel.requestLiveChecks(emptyList())
         }
 
