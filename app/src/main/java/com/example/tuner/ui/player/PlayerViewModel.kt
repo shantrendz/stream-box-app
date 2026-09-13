@@ -76,6 +76,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     private var autoRetryJob: Job? = null
 
+    // The URL actually handed to ExoPlayer for the in-flight attempt — may differ from
+    // channel.streamUrl after a scheme-swapped retry, so STATE_READY can tell whether the
+    // listed URL itself was proven to work or just some variant of it.
+    private var currentPlaybackUrl: String? = null
+
     // 0 = fresh channel, nothing tried yet; 1 = retried the same URL once (handles a slow or
     // transiently-broken manifest fetch); 2 = also tried the opposite http/https scheme
     // (some origins are only reachable one way, e.g. an HTTP source behind an HTTPS-only
@@ -88,9 +93,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 when (playbackState) {
                     Player.STATE_READY -> {
                         _uiState.update { it.copy(status = PlaybackUiStatus.LIVE, errorMessage = null) }
-                        // Only a direct play proves the listed URL works; a proxy success doesn't.
+                        // Only a direct play of the exact listed URL proves it works — a proxy
+                        // success doesn't, and neither does a scheme-swapped retry succeeding.
                         _uiState.value.channel
-                            ?.takeIf { !_uiState.value.isViaProxy }
+                            ?.takeIf { !_uiState.value.isViaProxy && currentPlaybackUrl == it.streamUrl }
                             ?.let { liveCheckRepository.report(it.streamUrl, working = true) }
                     }
                     Player.STATE_BUFFERING -> _uiState.update { it.copy(status = PlaybackUiStatus.LOADING) }
@@ -151,6 +157,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun startPlayback(url: String) {
+        currentPlaybackUrl = url
         exoPlayer.setMediaItem(MediaItem.fromUri(url))
         exoPlayer.prepare()
         exoPlayer.playWhenReady = true
@@ -218,6 +225,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         exoPlayer.stop()
         exoPlayer.clearMediaItems()
         autoRetryJob?.cancel()
+        currentPlaybackUrl = null
         _uiState.value = PlayerUiState()
     }
 
