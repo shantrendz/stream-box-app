@@ -72,7 +72,7 @@ fun ChannelRow(
             .background(if (isSelected) TunerAmberTint else MaterialTheme.colorScheme.surface)
             .border(width = if (isSelected) 1.5.dp else 1.dp, color = if (isSelected) TunerAmber else TunerOutline, shape = rowShape)
             .clickable(onClick = onClick)
-            .semantics { stateDescription = liveStatusDescription(liveStatus) }
+            .semantics { if (liveStatus != LiveStatus.UNCHECKED) stateDescription = liveStatusDescription(liveStatus) }
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

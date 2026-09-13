@@ -63,7 +63,10 @@ class MainActivity : FragmentActivity() {
     // leaves the foreground, the next person to open it has to enter the PIN again.
     override fun onStop() {
         super.onStop()
-        (application as TunerApplication).parentalControlRepository.lock()
+        val app = application as TunerApplication
+        app.parentalControlRepository.lock()
+        // Don't keep probing streams in the background; the list re-queues checks on return.
+        app.liveCheckRepository.pause()
     }
 }
 

@@ -73,13 +73,16 @@ data class ChannelListUiState(
     val liveOnly: Boolean = false,
     val liveStatuses: Map<String, LiveStatus> = emptyMap()
 ) {
-    val kidsVisibleChannels: List<Channel>
-        get() = KidsVisibility.visibleChannels(kidsCatalog, approvedKidsChannels, hiddenKidsUrls)
+    // Derived lists are cached per instance (body properties, so equals/copy are unaffected);
+    // the state is immutable, so each copy computes them at most once.
+    val kidsVisibleChannels: List<Channel> by lazy(LazyThreadSafetyMode.NONE) {
+        KidsVisibility.visibleChannels(kidsCatalog, approvedKidsChannels, hiddenKidsUrls)
+    }
 
     // In Kids Mode the Favorites tab reuses loadedChannels (streamed favorites) but only keeps
     // channels a child is allowed to see.
-    private val baseChannels: List<Channel>
-        get() = when {
+    private val baseChannels: List<Channel> by lazy(LazyThreadSafetyMode.NONE) {
+        when {
             !kidsMode -> loadedChannels
             kidsTab == KidsTab.CHANNELS -> kidsVisibleChannels
             else -> {
@@ -87,20 +90,21 @@ data class ChannelListUiState(
                 loadedChannels.filter { it.streamUrl in allowed }.distinctBy { it.streamUrl }
             }
         }
+    }
 
     /** Current list after the search filter, before the Live only filter. */
-    val searchMatchedChannels: List<Channel>
-        get() {
-            val base = baseChannels
-            return if (filterText.isBlank()) base else base.filter { it.name.contains(filterText, ignoreCase = true) }
-        }
+    val searchMatchedChannels: List<Channel> by lazy(LazyThreadSafetyMode.NONE) {
+        val base = baseChannels
+        if (filterText.isBlank()) base else base.filter { it.name.contains(filterText, ignoreCase = true) }
+    }
 
-    val filteredChannels: List<Channel>
-        get() = if (!liveOnly) {
+    val filteredChannels: List<Channel> by lazy(LazyThreadSafetyMode.NONE) {
+        if (!liveOnly) {
             searchMatchedChannels
         } else {
             searchMatchedChannels.filter { liveStatuses[it.streamUrl] == LiveStatus.WORKING }
         }
+    }
 
     fun liveStatusOf(channel: Channel): LiveStatus = liveStatuses[channel.streamUrl] ?: LiveStatus.UNCHECKED
 
@@ -511,12 +515,10 @@ class ChannelListViewModel(
      */
     fun requestLiveChecks(visibleUrls: List<String>) {
         val state = _uiState.value
-        val urls = if (state.liveOnly) {
-            visibleUrls + state.searchMatchedChannels.map { it.streamUrl }
-        } else {
-            visibleUrls
-        }
-        liveCheckRepository.request(urls)
+        liveCheckRepository.request(
+            visibleUrls,
+            if (state.liveOnly) state.searchMatchedChannels.map { it.streamUrl } else emptyList()
+        )
     }
 
     fun setLiveOnly(enabled: Boolean) {

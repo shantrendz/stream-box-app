@@ -1,7 +1,9 @@
 package com.example.tuner.livecheck
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -43,10 +45,18 @@ class LiveCheckRepositoryTest {
         }
     }
 
+    /** Publishes synchronously so runCurrent() is enough to observe results. */
+    private fun repo(
+        prober: StreamProbe,
+        scope: CoroutineScope,
+        clock: () -> Long = { 0L },
+        maxConcurrent: Int = LiveCheckRepository.DEFAULT_MAX_CONCURRENT
+    ) = LiveCheckRepository(prober, scope, clock = clock, maxConcurrent = maxConcurrent, publishIntervalMillis = 0L)
+
     @Test
     fun `never runs more than four probes at once`() = runTest {
         val prober = GatedProber()
-        val repo = LiveCheckRepository(prober, backgroundScope)
+        val repo = repo(prober, backgroundScope)
         val urls = (1..10).map { "u$it" }
 
         repo.request(urls)
@@ -65,7 +75,7 @@ class LiveCheckRepositoryTest {
     @Test
     fun `does not probe the same url twice while in flight`() = runTest {
         val prober = GatedProber()
-        val repo = LiveCheckRepository(prober, backgroundScope)
+        val repo = repo(prober, backgroundScope)
 
         repo.request(listOf("a", "a"))
         runCurrent()
@@ -81,7 +91,7 @@ class LiveCheckRepositoryTest {
     fun `results are reused for thirty minutes then rechecked`() = runTest {
         var now = 0L
         val prober = RecordingProber()
-        val repo = LiveCheckRepository(prober, backgroundScope, clock = { now })
+        val repo = repo(prober, backgroundScope, clock = { now })
 
         repo.request(listOf("a"))
         runCurrent()
@@ -99,7 +109,7 @@ class LiveCheckRepositoryTest {
     @Test
     fun `a new request drops queued urls that were not started`() = runTest {
         val prober = GatedProber()
-        val repo = LiveCheckRepository(prober, backgroundScope, maxConcurrent = 1)
+        val repo = repo(prober, backgroundScope, maxConcurrent = 1)
 
         repo.request(listOf("a", "b", "c"))
         runCurrent()
@@ -115,7 +125,7 @@ class LiveCheckRepositoryTest {
     @Test
     fun `reported playback results are cached without probing`() = runTest {
         val prober = RecordingProber()
-        val repo = LiveCheckRepository(prober, backgroundScope)
+        val repo = repo(prober, backgroundScope)
 
         repo.report("a", working = false)
         repo.request(listOf("a"))
@@ -128,7 +138,7 @@ class LiveCheckRepositoryTest {
     @Test
     fun `clear forgets results`() = runTest {
         val prober = RecordingProber()
-        val repo = LiveCheckRepository(prober, backgroundScope)
+        val repo = repo(prober, backgroundScope)
 
         repo.request(listOf("a"))
         runCurrent()
@@ -148,12 +158,129 @@ class LiveCheckRepositoryTest {
                 return LiveStatus.WORKING
             }
         }
-        val repo = LiveCheckRepository(prober, backgroundScope, maxConcurrent = 1)
+        val repo = repo(prober, backgroundScope, maxConcurrent = 1)
 
         repo.request(listOf("bad", "good"))
         runCurrent()
 
         assertEquals(LiveStatus.NOT_WORKING, repo.statuses.value["bad"])
         assertEquals(LiveStatus.WORKING, repo.statuses.value["good"])
+    }
+
+    @Test
+    fun `visible urls are probed before bulk urls`() = runTest {
+        val prober = RecordingProber()
+        val repo = repo(prober, backgroundScope, maxConcurrent = 1)
+
+        repo.request(visibleUrls = listOf("v1", "v2"), bulkUrls = listOf("b1", "v2", "b2", "b1"))
+        runCurrent()
+
+        assertEquals(listOf("v1", "v2", "b1", "b2"), prober.probed)
+    }
+
+    @Test
+    fun `an expired bulk url is not re-probed but an unchecked one is`() = runTest {
+        var now = 0L
+        val prober = RecordingProber()
+        val repo = repo(prober, backgroundScope, clock = { now }, maxConcurrent = 1)
+
+        repo.request(listOf("old"))
+        runCurrent()
+        now += 31 * 60_000L
+        repo.request(visibleUrls = emptyList(), bulkUrls = listOf("old", "new"))
+        runCurrent()
+
+        assertEquals(listOf("old", "new"), prober.probed)
+    }
+
+    @Test
+    fun `an expired visible url is re-probed`() = runTest {
+        var now = 0L
+        val prober = RecordingProber()
+        val repo = repo(prober, backgroundScope, clock = { now }, maxConcurrent = 1)
+
+        repo.request(listOf("a"))
+        runCurrent()
+        now += 31 * 60_000L
+        repo.request(visibleUrls = listOf("a"), bulkUrls = listOf("a", "b"))
+        runCurrent()
+
+        assertEquals(listOf("a", "a", "b"), prober.probed)
+    }
+
+    @Test
+    fun `pause drops queued urls that were not started`() = runTest {
+        val prober = GatedProber()
+        val repo = repo(prober, backgroundScope, maxConcurrent = 1)
+
+        repo.request(listOf("a", "b", "c"))
+        runCurrent()
+        repo.pause()
+        prober.release("a")
+        runCurrent()
+
+        assertEquals(listOf("a"), prober.probed)
+        assertEquals(LiveStatus.WORKING, repo.statuses.value["a"])
+    }
+
+    @Test
+    fun `a cached result keeps showing while it is re-checked`() = runTest {
+        var now = 0L
+        val secondProbe = CompletableDeferred<LiveStatus>()
+        var calls = 0
+        val prober = object : StreamProbe {
+            override suspend fun probe(url: String): LiveStatus {
+                calls++
+                return if (calls == 1) LiveStatus.WORKING else secondProbe.await()
+            }
+        }
+        val repo = repo(prober, backgroundScope, clock = { now })
+
+        repo.request(listOf("a"))
+        runCurrent()
+        assertEquals(LiveStatus.WORKING, repo.statuses.value["a"])
+
+        now += 31 * 60_000L
+        repo.request(listOf("a"))
+        runCurrent()
+        assertEquals(2, calls)
+        assertEquals(LiveStatus.WORKING, repo.statuses.value["a"])
+
+        secondProbe.complete(LiveStatus.NOT_WORKING)
+        runCurrent()
+        assertEquals(LiveStatus.NOT_WORKING, repo.statuses.value["a"])
+    }
+
+    @Test
+    fun `clear while a probe is in flight discards its result`() = runTest {
+        val prober = GatedProber()
+        val repo = repo(prober, backgroundScope)
+
+        repo.request(listOf("a"))
+        runCurrent()
+        repo.clear()
+        prober.release("a")
+        runCurrent()
+
+        assertNull(repo.statuses.value["a"])
+        assertEquals(listOf("a"), prober.probed)
+    }
+
+    @Test
+    fun `status updates are published at most once per interval`() = runTest {
+        val prober = GatedProber()
+        val repo = LiveCheckRepository(prober, backgroundScope, publishIntervalMillis = 250L)
+
+        repo.request(listOf("a"))
+        runCurrent()
+        assertEquals(LiveStatus.CHECKING, repo.statuses.value["a"])
+
+        prober.release("a")
+        runCurrent()
+        assertEquals(LiveStatus.CHECKING, repo.statuses.value["a"])
+
+        advanceTimeBy(250L)
+        runCurrent()
+        assertEquals(LiveStatus.WORKING, repo.statuses.value["a"])
     }
 }

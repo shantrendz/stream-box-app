@@ -66,7 +66,7 @@ fun ChannelGridTile(
                 .background(if (isSelected) TunerAmberTint else TunerSurface)
                 .border(width = if (isSelected) 1.5.dp else 1.dp, color = if (isSelected) TunerAmber else TunerOutline, shape = TileShape)
                 .clickable(onClick = onClick)
-                .semantics { stateDescription = liveStatusDescription(liveStatus) }
+                .semantics { if (liveStatus != LiveStatus.UNCHECKED) stateDescription = liveStatusDescription(liveStatus) }
                 .padding(10.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {

@@ -102,16 +102,9 @@ private const val WIDE_LAYOUT_MIN_DP = 700
 private const val VISIBLE_REPORT_DEBOUNCE_MILLIS = 300L
 private const val CHANNEL_KEY_PREFIX = "ch:"
 
-/** Lazy item keys look like "ch:<number>:<source>:<url>"; the number maps back to a stream URL. */
-private fun visibleUrlsFrom(keys: List<Any>, urlByNumber: Map<Int, String>): List<String> =
-    keys.mapNotNull { key ->
-        (key as? String)
-            ?.takeIf { it.startsWith(CHANNEL_KEY_PREFIX) }
-            ?.removePrefix(CHANNEL_KEY_PREFIX)
-            ?.substringBefore(':')
-            ?.toIntOrNull()
-            ?.let(urlByNumber::get)
-    }
+/** Channel item keys look like "ch:<source>|<url>" (plus "#n" for duplicates) and map back to a stream URL. */
+private fun visibleUrlsFrom(keys: List<Any>, urlByKey: Map<String, String>): List<String> =
+    keys.mapNotNull { key -> (key as? String)?.let(urlByKey::get) }
 
 @Composable
 fun ChannelListScreen(
@@ -384,7 +377,16 @@ private fun ChannelListPane(
         val stillChecking = uiState.liveOnly && matched.isNotEmpty() && checkedCount < matched.size
 
         // While Live only is on, keep the whole list queued even if nothing is visible yet.
-        LaunchedEffect(uiState.liveOnly, uiState.loadedChannels, uiState.kidsCatalog, uiState.filterText, uiState.kidsMode, uiState.kidsTab) {
+        LaunchedEffect(
+            uiState.liveOnly,
+            uiState.loadedChannels,
+            uiState.kidsCatalog,
+            uiState.filterText,
+            uiState.kidsMode,
+            uiState.kidsTab,
+            uiState.approvedKidsChannels,
+            uiState.hiddenKidsUrls
+        ) {
             if (uiState.liveOnly) viewModel.requestLiveChecks(emptyList())
         }
 
@@ -505,7 +507,7 @@ private fun kidsEmptyMessageFor(tab: KidsTab): String = when (tab) {
     KidsTab.FAVORITES -> "NO FAVORITES YET — TAP ★ ON A CHANNEL"
 }
 
-private data class NumberedChannel(val index: Int, val channel: Channel)
+private data class NumberedChannel(val index: Int, val channel: Channel, val key: String)
 
 @OptIn(FlowPreview::class)
 @Composable
@@ -529,16 +531,32 @@ private fun ChannelList(
 ) {
     val grouped = remember(channels, groupBySource) {
         val groupKeySelector: (Channel) -> String = if (groupBySource) { c -> c.source } else { c -> c.group }
-        val sorted = channels.sortedWith(compareBy(groupKeySelector).thenBy { it.name.lowercase() })
+        // Lowercase names are computed once per channel, not on every comparison.
+        val sorted = channels
+            .map { it to it.name.lowercase() }
+            .sortedWith(compareBy<Pair<Channel, String>> { groupKeySelector(it.first) }.thenBy { it.second })
+        // Keys don't embed the running number, so rows keep their identity when the list
+        // changes; a repeated source+url gets "#n" appended.
+        val usedKeys = HashSet<String>(sorted.size)
         var counter = 0
         sorted
-            .map { channel -> counter++; NumberedChannel(counter, channel) }
+            .map { (channel, _) ->
+                counter++
+                val base = "$CHANNEL_KEY_PREFIX${channel.source}|${channel.streamUrl}"
+                var key = base
+                var n = 1
+                while (!usedKeys.add(key)) {
+                    n++
+                    key = "$base#$n"
+                }
+                NumberedChannel(counter, channel, key)
+            }
             .groupBy { groupKeySelector(it.channel) }
             .toSortedMap()
     }
 
-    val urlByNumber = remember(grouped) {
-        grouped.values.flatten().associate { it.index to it.channel.streamUrl }
+    val urlByKey = remember(grouped) {
+        grouped.values.flatten().associate { it.key to it.channel.streamUrl }
     }
 
     // All categories start open; the user collapses ones they don't want to see. A search
@@ -605,9 +623,9 @@ private fun ChannelList(
         Box(Modifier.weight(1f)) {
         if (viewMode == ChannelViewMode.GRID) {
             val gridState = rememberLazyGridState()
-            LaunchedEffect(gridState, urlByNumber) {
+            LaunchedEffect(gridState, urlByKey) {
                 snapshotFlow { gridState.layoutInfo.visibleItemsInfo.map { it.key } }
-                    .map { visibleUrlsFrom(it, urlByNumber) }
+                    .map { visibleUrlsFrom(it, urlByKey) }
                     .distinctUntilChanged()
                     .debounce(VISIBLE_REPORT_DEBOUNCE_MILLIS)
                     .collect { onVisibleUrlsChanged(it) }
@@ -629,7 +647,7 @@ private fun ChannelList(
                         )
                     }
                     if (isExpanded) {
-                        items(numberedChannels, key = { "$CHANNEL_KEY_PREFIX${it.index}:${it.channel.source}:${it.channel.streamUrl}" }) { numbered ->
+                        items(numberedChannels, key = { it.key }) { numbered ->
                             ChannelGridTile(
                                 channel = numbered.channel,
                                 isSelected = numbered.channel == selectedChannel,
@@ -651,9 +669,9 @@ private fun ChannelList(
             )
         } else {
             val listState = rememberLazyListState()
-            LaunchedEffect(listState, urlByNumber) {
+            LaunchedEffect(listState, urlByKey) {
                 snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.key } }
-                    .map { visibleUrlsFrom(it, urlByNumber) }
+                    .map { visibleUrlsFrom(it, urlByKey) }
                     .distinctUntilChanged()
                     .debounce(VISIBLE_REPORT_DEBOUNCE_MILLIS)
                     .collect { onVisibleUrlsChanged(it) }
@@ -674,7 +692,7 @@ private fun ChannelList(
                         )
                     }
                     if (isExpanded) {
-                        items(numberedChannels, key = { "$CHANNEL_KEY_PREFIX${it.index}:${it.channel.source}:${it.channel.streamUrl}" }) { numbered ->
+                        items(numberedChannels, key = { it.key }) { numbered ->
                             ChannelRow(
                                 index = numbered.index,
                                 channel = numbered.channel,
