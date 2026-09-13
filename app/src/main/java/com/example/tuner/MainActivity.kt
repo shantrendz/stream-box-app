@@ -1,7 +1,6 @@
 package com.example.tuner
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
@@ -14,6 +13,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.tuner.ui.channels.ChannelListScreen
 import com.example.tuner.ui.channels.ChannelListViewModel
@@ -26,8 +26,11 @@ import com.example.tuner.ui.theme.TunerTheme
 /**
  * Single-activity app. Screen switching (list / custom-source manager / settings) is local
  * UI state — no nav graph needed for three screens.
+ *
+ * Extends [FragmentActivity] (not plain ComponentActivity) because the Cast button's device
+ * picker is shown as a DialogFragment and crashes without a FragmentManager host.
  */
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
