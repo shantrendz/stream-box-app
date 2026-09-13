@@ -32,6 +32,7 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GridView
@@ -72,6 +73,9 @@ import com.example.tuner.ui.components.ChannelGridTile
 import com.example.tuner.ui.components.ChannelRow
 import com.example.tuner.ui.components.GroupHeader
 import com.example.tuner.ui.components.RegionCategoryToolbar
+import com.example.tuner.ui.parental.KidsTabsToolbar
+import com.example.tuner.ui.parental.ParentalAuthFlow
+import com.example.tuner.ui.parental.ParentalFlowStart
 import com.example.tuner.ui.player.FullScreenPlayerHost
 import com.example.tuner.ui.player.PlayerScreen
 import com.example.tuner.ui.theme.TunerAmber
@@ -94,6 +98,7 @@ fun ChannelListScreen(
     val uiState by viewModel.uiState.collectAsState()
     var isFullScreenPlayer by remember { mutableStateOf(false) }
     val selected = uiState.selectedChannel
+    var showParentGate by remember { mutableStateOf(false) }
 
     if (isFullScreenPlayer && selected != null) {
         FullScreenPlayerHost(
@@ -110,11 +115,27 @@ fun ChannelListScreen(
     Column(modifier.fillMaxSize().background(TunerBackground)) {
         TunerTitleBar(
             viewMode = uiState.viewMode,
+            kidsMode = uiState.kidsMode,
             onSetViewMode = viewModel::setViewMode,
             onOpenCustomSourceManager = onOpenCustomSourceManager,
-            onOpenSettings = onOpenSettings,
+            onOpenSettings = {
+                if (uiState.kidsMode && !uiState.parentUnlocked) showParentGate = true else onOpenSettings()
+            },
             onResetToAllChannels = viewModel::resetToAllChannels
         )
+
+        if (showParentGate) {
+            ParentalAuthFlow(
+                start = if (uiState.hasParentPin) ParentalFlowStart.UNLOCK else ParentalFlowStart.SETUP,
+                lockoutUntil = uiState.pinLockoutUntil,
+                onVerifyPin = viewModel::verifyParentPin,
+                onSetPin = viewModel::setParentPin,
+                onFinished = { success ->
+                    showParentGate = false
+                    if (success) onOpenSettings()
+                }
+            )
+        }
 
         BoxWithConstraints(
             modifier = Modifier
@@ -184,6 +205,7 @@ fun ChannelListScreen(
 @Composable
 private fun TunerTitleBar(
     viewMode: ChannelViewMode,
+    kidsMode: Boolean,
     onSetViewMode: (ChannelViewMode) -> Unit,
     onOpenCustomSourceManager: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -209,6 +231,19 @@ private fun TunerTitleBar(
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(start = 8.dp)
             )
+            if (kidsMode) {
+                Text(
+                    text = "KIDS",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TunerBackground,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .padding(start = 8.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(TunerAmber)
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+            }
         }
         Box(Modifier.weight(1f))
         IconButton(onClick = { onSetViewMode(if (viewMode == ChannelViewMode.LIST) ChannelViewMode.GRID else ChannelViewMode.LIST) }) {
@@ -218,8 +253,10 @@ private fun TunerTitleBar(
                 tint = TunerTextPrimary
             )
         }
-        IconButton(onClick = onOpenCustomSourceManager) {
-            Icon(Icons.Filled.Link, contentDescription = "Manage custom sources", tint = TunerTextPrimary)
+        if (!kidsMode) {
+            IconButton(onClick = onOpenCustomSourceManager) {
+                Icon(Icons.Filled.Link, contentDescription = "Manage custom sources", tint = TunerTextPrimary)
+            }
         }
         IconButton(onClick = onOpenSettings) {
             Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = TunerTextPrimary)
@@ -245,21 +282,31 @@ private fun ChannelListPane(
     modifier: Modifier = Modifier
 ) {
     Column(modifier.background(TunerBackground)) {
-        RegionCategoryToolbar(
-            topMode = uiState.topMode,
-            region = uiState.region,
-            category = uiState.category,
-            language = uiState.language,
-            onSelectRegion = viewModel::selectRegion,
-            onSelectCategory = viewModel::selectCategory,
-            onSelectLanguage = viewModel::selectLanguage,
-            onSelectCustomSources = viewModel::activateCustomSourcesMode,
-            onSelectFavorites = viewModel::selectFavoritesMode,
-            onSelectHistory = viewModel::selectHistoryMode,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 4.dp)
-        )
+        if (uiState.kidsMode) {
+            KidsTabsToolbar(
+                selected = uiState.kidsTab,
+                onSelect = viewModel::selectKidsTab,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 4.dp)
+            )
+        } else {
+            RegionCategoryToolbar(
+                topMode = uiState.topMode,
+                region = uiState.region,
+                category = uiState.category,
+                language = uiState.language,
+                onSelectRegion = viewModel::selectRegion,
+                onSelectCategory = viewModel::selectCategory,
+                onSelectLanguage = viewModel::selectLanguage,
+                onSelectCustomSources = viewModel::activateCustomSourcesMode,
+                onSelectFavorites = viewModel::selectFavoritesMode,
+                onSelectHistory = viewModel::selectHistoryMode,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 4.dp)
+            )
+        }
 
         OutlinedTextField(
             value = uiState.filterText,
@@ -315,7 +362,7 @@ private fun ChannelListPane(
 
         }
 
-        if (uiState.topMode == TopMode.HISTORY && !uiState.historyEnabled) {
+        if (!uiState.kidsMode && uiState.topMode == TopMode.HISTORY && !uiState.historyEnabled) {
             Text(
                 text = "Saving watch history is turned off — see Settings to re-enable it.",
                 style = MaterialTheme.typography.labelSmall,
@@ -355,7 +402,7 @@ private fun ChannelListPane(
             favoriteKeys = uiState.favoriteKeys,
             isSearching = uiState.filterText.isNotBlank(),
             statusMessage = uiState.customSourcesStatusMessage,
-            emptyMessage = emptyMessageFor(uiState.topMode),
+            emptyMessage = if (uiState.kidsMode) kidsEmptyMessageFor(uiState.kidsTab) else emptyMessageFor(uiState.topMode),
             onSelect = viewModel::selectChannel,
             onToggleFavorite = viewModel::toggleFavorite,
             modifier = Modifier.fillMaxSize()
@@ -367,6 +414,11 @@ private fun emptyMessageFor(mode: TopMode): String = when (mode) {
     TopMode.FAVORITES -> "NO FAVORITES YET — TAP ★ ON A CHANNEL"
     TopMode.HISTORY -> "NO WATCH HISTORY YET"
     else -> "NO CHANNELS FOUND"
+}
+
+private fun kidsEmptyMessageFor(tab: KidsTab): String = when (tab) {
+    KidsTab.CHANNELS -> "NO KIDS CHANNELS FOUND"
+    KidsTab.FAVORITES -> "NO FAVORITES YET — TAP ★ ON A CHANNEL"
 }
 
 private data class NumberedChannel(val index: Int, val channel: Channel)

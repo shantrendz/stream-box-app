@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -71,6 +72,13 @@ private enum class Screen { CHANNELS, CUSTOM_SOURCES, SETTINGS }
 private fun TunerApp(viewModel: ChannelListViewModel) {
     var screen by remember { mutableStateOf(Screen.CHANNELS) }
     var showSplash by remember { mutableStateOf(true) }
+    val uiState by viewModel.uiState.collectAsState()
+
+    // If the parent session ends (app backgrounded, 10 min timeout) while Settings or the
+    // custom-source manager is open in Kids Mode, don't leave the child sitting on it.
+    LaunchedEffect(uiState.kidsMode, uiState.parentUnlocked) {
+        if (uiState.kidsMode && !uiState.parentUnlocked) screen = Screen.CHANNELS
+    }
 
     // App content draws edge-to-edge (enableEdgeToEdge()), so pad the status bar in here
     // rather than letting the system status bar icons overlap the TUNER header/player.
