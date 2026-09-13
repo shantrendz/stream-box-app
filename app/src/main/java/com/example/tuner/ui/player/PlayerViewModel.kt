@@ -72,6 +72,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
 
     private val castSessionManager = getApplication<TunerApplication>().castSessionManager
+    private val liveCheckRepository = getApplication<TunerApplication>().liveCheckRepository
 
     private var autoRetryJob: Job? = null
 
@@ -85,7 +86,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         exoPlayer.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 when (playbackState) {
-                    Player.STATE_READY -> _uiState.update { it.copy(status = PlaybackUiStatus.LIVE, errorMessage = null) }
+                    Player.STATE_READY -> {
+                        _uiState.update { it.copy(status = PlaybackUiStatus.LIVE, errorMessage = null) }
+                        // Only a direct play proves the listed URL works; a proxy success doesn't.
+                        _uiState.value.channel
+                            ?.takeIf { !_uiState.value.isViaProxy }
+                            ?.let { liveCheckRepository.report(it.streamUrl, working = true) }
+                    }
                     Player.STATE_BUFFERING -> _uiState.update { it.copy(status = PlaybackUiStatus.LOADING) }
                     else -> Unit
                 }
@@ -173,6 +180,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             }
             else -> {
                 _uiState.update { it.copy(status = PlaybackUiStatus.SIGNAL_LOST, errorMessage = message) }
+                if (!isViaProxy) liveCheckRepository.report(channel.streamUrl, working = false)
             }
         }
     }

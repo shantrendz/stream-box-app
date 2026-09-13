@@ -19,9 +19,12 @@ import com.example.tuner.data.repository.SingleLoadResult
 import com.example.tuner.data.repository.TopMode
 import com.example.tuner.data.repository.favoriteKey
 import com.example.tuner.domain.PlaylistSource
+import com.example.tuner.livecheck.LiveCheckRepository
+import com.example.tuner.livecheck.LiveStatus
 import com.example.tuner.parental.KidsShieldState
 import com.example.tuner.parental.KidsVisibility
 import com.example.tuner.ui.theme.ThemeMode
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -30,8 +33,11 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+
+private const val LIVE_STATUS_SAMPLE_MILLIS = 300L
 
 /** List (teletext rows) or Grid (icon + name tiles). */
 enum class ChannelViewMode { LIST, GRID }
@@ -63,7 +69,9 @@ data class ChannelListUiState(
     val parentUnlocked: Boolean = false,
     val hiddenKidsUrls: Set<String> = emptySet(),
     val approvedKidsChannels: List<Channel> = emptyList(),
-    val pinLockoutUntil: Long = 0L
+    val pinLockoutUntil: Long = 0L,
+    val liveOnly: Boolean = false,
+    val liveStatuses: Map<String, LiveStatus> = emptyMap()
 ) {
     val kidsVisibleChannels: List<Channel>
         get() = KidsVisibility.visibleChannels(kidsCatalog, approvedKidsChannels, hiddenKidsUrls)
@@ -80,11 +88,21 @@ data class ChannelListUiState(
             }
         }
 
-    val filteredChannels: List<Channel>
+    /** Current list after the search filter, before the Live only filter. */
+    val searchMatchedChannels: List<Channel>
         get() {
             val base = baseChannels
             return if (filterText.isBlank()) base else base.filter { it.name.contains(filterText, ignoreCase = true) }
         }
+
+    val filteredChannels: List<Channel>
+        get() = if (!liveOnly) {
+            searchMatchedChannels
+        } else {
+            searchMatchedChannels.filter { liveStatuses[it.streamUrl] == LiveStatus.WORKING }
+        }
+
+    fun liveStatusOf(channel: Channel): LiveStatus = liveStatuses[channel.streamUrl] ?: LiveStatus.UNCHECKED
 
     val isCustomSourcesMode: Boolean get() = !kidsMode && topMode == TopMode.CUSTOM
 
@@ -98,13 +116,15 @@ data class ChannelListUiState(
     }
 }
 
+@OptIn(FlowPreview::class)
 class ChannelListViewModel(
     private val channelRepository: ChannelRepository,
     private val customSourceRepository: CustomSourceRepository,
     private val appStateRepository: AppStateRepository,
     private val favoritesRepository: FavoritesRepository,
     private val historyRepository: HistoryRepository,
-    private val parentalControlRepository: ParentalControlRepository
+    private val parentalControlRepository: ParentalControlRepository,
+    private val liveCheckRepository: LiveCheckRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ChannelListUiState())
@@ -167,6 +187,17 @@ class ChannelListViewModel(
                 .distinctUntilChanged()
                 .drop(1)
                 .collect { enabled -> if (enabled) enterKidsMode() else exitKidsMode() }
+        }
+        viewModelScope.launch {
+            appStateRepository.liveOnly.collect { enabled ->
+                _uiState.update { it.copy(liveOnly = enabled) }
+            }
+        }
+        // Sampled so hundreds of probe results don't each trigger a list recomposition.
+        viewModelScope.launch {
+            liveCheckRepository.statuses.sample(LIVE_STATUS_SAMPLE_MILLIS).collect { statuses ->
+                _uiState.update { it.copy(liveStatuses = statuses) }
+            }
         }
         restoreLastState()
     }
@@ -472,6 +503,30 @@ class ChannelListViewModel(
         viewModelScope.launch { appStateRepository.saveThemeMode(mode) }
     }
 
+    // --- Live Check ---
+
+    /**
+     * Queues checks for what's on screen. With Live only on, the rest of the current list is
+     * queued behind the visible rows so the filter can fill in.
+     */
+    fun requestLiveChecks(visibleUrls: List<String>) {
+        val state = _uiState.value
+        val urls = if (state.liveOnly) {
+            visibleUrls + state.searchMatchedChannels.map { it.streamUrl }
+        } else {
+            visibleUrls
+        }
+        liveCheckRepository.request(urls)
+    }
+
+    fun setLiveOnly(enabled: Boolean) {
+        _uiState.update { it.copy(liveOnly = enabled) }
+        viewModelScope.launch { appStateRepository.saveLiveOnly(enabled) }
+        if (enabled) requestLiveChecks(emptyList())
+    }
+
+    fun clearLiveCheckResults() = liveCheckRepository.clear()
+
     // --- Parental control ---
 
     /** [onDone] runs on the main thread once the PIN is saved and the parent is unlocked. */
@@ -562,7 +617,8 @@ class ChannelListViewModel(
             appStateRepository: AppStateRepository,
             favoritesRepository: FavoritesRepository,
             historyRepository: HistoryRepository,
-            parentalControlRepository: ParentalControlRepository
+            parentalControlRepository: ParentalControlRepository,
+            liveCheckRepository: LiveCheckRepository
         ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 ChannelListViewModel(
@@ -571,7 +627,8 @@ class ChannelListViewModel(
                     appStateRepository,
                     favoritesRepository,
                     historyRepository,
-                    parentalControlRepository
+                    parentalControlRepository,
+                    liveCheckRepository
                 )
             }
         }

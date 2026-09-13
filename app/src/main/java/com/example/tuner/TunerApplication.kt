@@ -8,6 +8,8 @@ import com.example.tuner.data.repository.CustomSourceRepository
 import com.example.tuner.data.repository.FavoritesRepository
 import com.example.tuner.data.repository.HistoryRepository
 import com.example.tuner.data.repository.ParentalControlRepository
+import com.example.tuner.livecheck.LiveCheckRepository
+import com.example.tuner.livecheck.StreamProber
 
 /**
  * Lightweight manual DI container — no Hilt needed for a repository graph this small.
@@ -29,6 +31,8 @@ class TunerApplication : Application() {
         private set
     lateinit var parentalControlRepository: ParentalControlRepository
         private set
+    lateinit var liveCheckRepository: LiveCheckRepository
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -39,5 +43,6 @@ class TunerApplication : Application() {
         historyRepository = HistoryRepository(applicationContext)
         castSessionManager = CastSessionManager(applicationContext)
         parentalControlRepository = ParentalControlRepository(applicationContext)
+        liveCheckRepository = LiveCheckRepository(StreamProber())
     }
 }

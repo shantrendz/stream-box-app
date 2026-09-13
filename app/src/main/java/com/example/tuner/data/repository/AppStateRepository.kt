@@ -1,6 +1,7 @@
 package com.example.tuner.data.repository
 
 import android.content.Context
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -36,6 +37,7 @@ class AppStateRepository(private val context: Context) {
     private val filterTextKey = stringPreferencesKey("last_filter_text")
     private val themeModeKey = stringPreferencesKey("theme_mode")
     private val viewModeKey = stringPreferencesKey("channel_view_mode")
+    private val liveOnlyKey = booleanPreferencesKey("live_only")
 
     val lastCatalogState: Flow<LastCatalogState> = context.appStateDataStore.data.map { prefs ->
         val topMode = prefs[topModeKey]?.let { raw -> runCatching { TopMode.valueOf(raw) }.getOrNull() } ?: TopMode.CATALOG
@@ -83,5 +85,12 @@ class AppStateRepository(private val context: Context) {
 
     suspend fun saveChannelViewMode(mode: ChannelViewMode) {
         context.appStateDataStore.edit { prefs -> prefs[viewModeKey] = mode.name }
+    }
+
+    /** "Live only" channel filter — remembered across restarts. */
+    val liveOnly: Flow<Boolean> = context.appStateDataStore.data.map { prefs -> prefs[liveOnlyKey] ?: false }
+
+    suspend fun saveLiveOnly(enabled: Boolean) {
+        context.appStateDataStore.edit { prefs -> prefs[liveOnlyKey] = enabled }
     }
 }
