@@ -31,6 +31,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.tuner.data.model.Channel
+import com.example.tuner.parental.KidsShieldState
+import com.example.tuner.ui.parental.KidsShieldButton
 import com.example.tuner.ui.theme.TunerAmber
 import com.example.tuner.ui.theme.TunerAmberTint
 import com.example.tuner.ui.theme.TunerCyan
@@ -55,6 +57,8 @@ fun ChannelRow(
     showSourceTag: Boolean,
     onClick: () -> Unit,
     onToggleFavorite: () -> Unit,
+    shieldState: KidsShieldState? = null,
+    onShieldClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val rowShape = RoundedCornerShape(12.dp)
@@ -116,6 +120,10 @@ fun ChannelRow(
         if (showSourceTag) {
             Spacer(Modifier.width(4.dp))
             SourceTag(channel.source)
+        }
+
+        if (shieldState != null) {
+            KidsShieldButton(state = shieldState, onClick = onShieldClick, modifier = Modifier.size(32.dp))
         }
 
         IconButton(onClick = onToggleFavorite, modifier = Modifier.size(32.dp)) {

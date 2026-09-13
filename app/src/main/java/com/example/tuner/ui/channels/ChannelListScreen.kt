@@ -68,6 +68,7 @@ import kotlinx.coroutines.launch
 import com.example.tuner.data.model.Channel
 import com.example.tuner.data.repository.TopMode
 import com.example.tuner.data.repository.favoriteKey
+import com.example.tuner.parental.KidsShieldState
 import com.example.tuner.ui.components.AppIcon
 import com.example.tuner.ui.components.ChannelGridTile
 import com.example.tuner.ui.components.ChannelRow
@@ -405,6 +406,8 @@ private fun ChannelListPane(
             emptyMessage = if (uiState.kidsMode) kidsEmptyMessageFor(uiState.kidsTab) else emptyMessageFor(uiState.topMode),
             onSelect = viewModel::selectChannel,
             onToggleFavorite = viewModel::toggleFavorite,
+            shieldStateFor = if (uiState.parentUnlocked) uiState::kidsShieldStateFor else null,
+            onShieldClick = viewModel::onKidsShieldClick,
             modifier = Modifier.fillMaxSize()
         )
     }
@@ -436,6 +439,8 @@ private fun ChannelList(
     emptyMessage: String,
     onSelect: (Channel) -> Unit,
     onToggleFavorite: (Channel) -> Unit,
+    shieldStateFor: ((Channel) -> KidsShieldState)?,
+    onShieldClick: (Channel) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val grouped = remember(channels, groupBySource) {
@@ -536,6 +541,8 @@ private fun ChannelList(
                                 isFavorite = favoriteKeys.contains(numbered.channel.favoriteKey()),
                                 onClick = { onSelect(numbered.channel) },
                                 onToggleFavorite = { onToggleFavorite(numbered.channel) },
+                                shieldState = shieldStateFor?.invoke(numbered.channel),
+                                onShieldClick = { onShieldClick(numbered.channel) },
                                 modifier = Modifier.padding(4.dp)
                             )
                         }
@@ -572,7 +579,9 @@ private fun ChannelList(
                                 isFavorite = favoriteKeys.contains(numbered.channel.favoriteKey()),
                                 showSourceTag = showSourceTag,
                                 onClick = { onSelect(numbered.channel) },
-                                onToggleFavorite = { onToggleFavorite(numbered.channel) }
+                                onToggleFavorite = { onToggleFavorite(numbered.channel) },
+                                shieldState = shieldStateFor?.invoke(numbered.channel),
+                                onShieldClick = { onShieldClick(numbered.channel) }
                             )
                         }
                     }

@@ -28,6 +28,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.tuner.data.model.Channel
+import com.example.tuner.parental.KidsShieldState
+import com.example.tuner.ui.parental.KidsShieldButton
 import com.example.tuner.ui.theme.TunerAmber
 import com.example.tuner.ui.theme.TunerAmberTint
 import com.example.tuner.ui.theme.TunerOutline
@@ -45,6 +47,8 @@ fun ChannelGridTile(
     isFavorite: Boolean,
     onClick: () -> Unit,
     onToggleFavorite: () -> Unit,
+    shieldState: KidsShieldState? = null,
+    onShieldClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Box(modifier = modifier.fillMaxWidth()) {
@@ -104,6 +108,17 @@ fun ChannelGridTile(
                 contentDescription = if (isFavorite) "Remove from favorites" else "Add to favorites",
                 tint = if (isFavorite) TunerAmber else TunerTextSecondary,
                 modifier = Modifier.size(18.dp)
+            )
+        }
+
+        if (shieldState != null) {
+            KidsShieldButton(
+                state = shieldState,
+                onClick = onShieldClick,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .size(28.dp),
+                iconSize = 18.dp
             )
         }
     }
