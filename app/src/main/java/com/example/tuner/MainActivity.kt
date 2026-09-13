@@ -59,6 +59,13 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    // Re-queues whatever checks were last requested (visible rows, Live-only bulk pass) once
+    // the app is back in the foreground; also runs on first launch, where it's a no-op.
+    override fun onStart() {
+        super.onStart()
+        (application as TunerApplication).liveCheckRepository.resume()
+    }
+
     // Parent unlock is meant for "the parent is holding the phone right now" — once the app
     // leaves the foreground, the next person to open it has to enter the PIN again.
     override fun onStop() {

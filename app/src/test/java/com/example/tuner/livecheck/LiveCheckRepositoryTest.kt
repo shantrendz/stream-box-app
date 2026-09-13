@@ -224,6 +224,50 @@ class LiveCheckRepositoryTest {
     }
 
     @Test
+    fun `resume re-queues the last requested urls after a pause`() = runTest {
+        val prober = GatedProber()
+        val repo = repo(prober, backgroundScope, maxConcurrent = 1)
+
+        repo.request(listOf("a", "b", "c"))
+        runCurrent()
+        // a in flight
+        repo.pause()
+        prober.release("a")
+        runCurrent()
+
+        // b, c not probed while paused
+        assertEquals(listOf("a"), prober.probed)
+
+        repo.resume()
+        runCurrent()
+        prober.release("b")
+        runCurrent()
+        prober.release("c")
+        runCurrent()
+
+        assertEquals(listOf("a", "b", "c"), prober.probed)
+    }
+
+    @Test
+    fun `requests while paused are remembered but not started`() = runTest {
+        val prober = GatedProber()
+        val repo = repo(prober, backgroundScope, maxConcurrent = 1)
+
+        repo.pause()
+        repo.request(listOf("x"))
+        runCurrent()
+
+        assertTrue(prober.probed.isEmpty())
+
+        repo.resume()
+        runCurrent()
+        prober.release("x")
+        runCurrent()
+
+        assertEquals(listOf("x"), prober.probed)
+    }
+
+    @Test
     fun `a cached result keeps showing while it is re-checked`() = runTest {
         var now = 0L
         val secondProbe = CompletableDeferred<LiveStatus>()

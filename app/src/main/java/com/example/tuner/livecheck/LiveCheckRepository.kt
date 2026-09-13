@@ -41,6 +41,11 @@ class LiveCheckRepository(
     private val wake = Channel<Unit>(Channel.CONFLATED)
     private val publishSignal = Channel<Unit>(Channel.CONFLATED)
 
+    // Last lists passed to request(), remembered so resume() can re-queue them after a pause.
+    private var lastVisibleUrls: List<String> = emptyList()
+    private var lastBulkUrls: List<String> = emptyList()
+    private var paused: Boolean = false
+
     // Bumped by clear() so probes started before it don't store their results afterwards.
     private var generation = 0L
 
@@ -58,20 +63,49 @@ class LiveCheckRepository(
      * so a long bulk pass always makes progress through the unchecked tail.
      */
     fun request(visibleUrls: List<String>, bulkUrls: List<String> = emptyList()) {
-        val visible = visibleUrls.distinct()
-        val visibleSet = visible.toHashSet()
-        val bulk = bulkUrls.filter { it !in visibleSet }.distinct()
-        synchronized(lock) {
-            pending.clear()
-            visible.filterTo(pending) { needsCheckLocked(it) }
-            bulk.filterTo(pending) { it !in inFlight && it !in results }
+        val shouldWake = synchronized(lock) {
+            lastVisibleUrls = visibleUrls
+            lastBulkUrls = bulkUrls
+            if (paused) {
+                false
+            } else {
+                buildQueueLocked(visibleUrls, bulkUrls)
+                true
+            }
         }
-        wake.trySend(Unit)
+        if (shouldWake) wake.trySend(Unit)
     }
 
     /** Drops queued checks (running probes finish), e.g. when the app leaves the foreground. */
     fun pause() {
-        synchronized(lock) { pending.clear() }
+        synchronized(lock) {
+            paused = true
+            pending.clear()
+        }
+    }
+
+    /** Resumes probing, re-queueing whatever was last requested while paused. */
+    fun resume() {
+        val shouldWake = synchronized(lock) {
+            paused = false
+            if (lastVisibleUrls.isEmpty() && lastBulkUrls.isEmpty()) {
+                false
+            } else {
+                buildQueueLocked(lastVisibleUrls, lastBulkUrls)
+                true
+            }
+        }
+        if (shouldWake) wake.trySend(Unit)
+    }
+
+    /** Replaces [pending] per the visible-then-bulk composition rules. Caller holds [lock]. */
+    private fun buildQueueLocked(visibleUrls: List<String>, bulkUrls: List<String>) {
+        val visible = visibleUrls.distinct()
+        val visibleSet = visible.toHashSet()
+        val bulk = bulkUrls.filter { it !in visibleSet }.distinct()
+        pending.clear()
+        visible.filterTo(pending) { needsCheckLocked(it) }
+        bulk.filterTo(pending) { it !in inFlight && it !in results }
     }
 
     fun report(url: String, working: Boolean) {
