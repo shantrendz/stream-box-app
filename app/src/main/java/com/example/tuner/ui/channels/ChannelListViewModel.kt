@@ -13,21 +13,31 @@ import com.example.tuner.data.repository.ChannelRepository
 import com.example.tuner.data.repository.CustomSourceRepository
 import com.example.tuner.data.repository.FavoritesRepository
 import com.example.tuner.data.repository.HistoryRepository
+import com.example.tuner.data.repository.ParentalControlRepository
+import com.example.tuner.data.repository.PinResult
 import com.example.tuner.data.repository.SingleLoadResult
 import com.example.tuner.data.repository.TopMode
 import com.example.tuner.data.repository.favoriteKey
 import com.example.tuner.domain.PlaylistSource
+import com.example.tuner.parental.KidsShieldState
+import com.example.tuner.parental.KidsVisibility
 import com.example.tuner.ui.theme.ThemeMode
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /** List (teletext rows) or Grid (icon + name tiles). */
 enum class ChannelViewMode { LIST, GRID }
+
+/** The two tabs a child can switch between in Kids Mode. */
+enum class KidsTab { CHANNELS, FAVORITES }
 
 data class ChannelListUiState(
     val topMode: TopMode = TopMode.CATALOG,
@@ -45,18 +55,47 @@ data class ChannelListUiState(
     val selectedChannel: Channel? = null,
     val favoriteKeys: Set<String> = emptySet(),
     val historyEnabled: Boolean = true,
-    val themeMode: ThemeMode = ThemeMode.SYSTEM
+    val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    val kidsMode: Boolean = false,
+    val kidsTab: KidsTab = KidsTab.CHANNELS,
+    val kidsCatalog: List<Channel> = emptyList(),
+    val hasParentPin: Boolean = false,
+    val parentUnlocked: Boolean = false,
+    val hiddenKidsUrls: Set<String> = emptySet(),
+    val approvedKidsChannels: List<Channel> = emptyList(),
+    val pinLockoutUntil: Long = 0L
 ) {
-    val filteredChannels: List<Channel>
-        get() = if (filterText.isBlank()) {
-            loadedChannels
-        } else {
-            loadedChannels.filter { it.name.contains(filterText, ignoreCase = true) }
+    val kidsVisibleChannels: List<Channel>
+        get() = KidsVisibility.visibleChannels(kidsCatalog, approvedKidsChannels, hiddenKidsUrls)
+
+    // In Kids Mode the Favorites tab reuses loadedChannels (streamed favorites) but only keeps
+    // channels a child is allowed to see.
+    private val baseChannels: List<Channel>
+        get() = when {
+            !kidsMode -> loadedChannels
+            kidsTab == KidsTab.CHANNELS -> kidsVisibleChannels
+            else -> {
+                val allowed = kidsVisibleChannels.mapTo(HashSet()) { it.streamUrl }
+                loadedChannels.filter { it.streamUrl in allowed }
+            }
         }
 
-    val isCustomSourcesMode: Boolean get() = topMode == TopMode.CUSTOM
+    val filteredChannels: List<Channel>
+        get() {
+            val base = baseChannels
+            return if (filterText.isBlank()) base else base.filter { it.name.contains(filterText, ignoreCase = true) }
+        }
+
+    val isCustomSourcesMode: Boolean get() = !kidsMode && topMode == TopMode.CUSTOM
 
     fun isFavorite(channel: Channel): Boolean = favoriteKeys.contains(channel.favoriteKey())
+
+    fun kidsShieldStateFor(channel: Channel): KidsShieldState = when {
+        kidsMode -> KidsShieldState.VISIBLE_IN_KIDS
+        approvedKidsChannels.any { it.streamUrl == channel.streamUrl } -> KidsShieldState.APPROVED
+        channel.streamUrl in hiddenKidsUrls -> KidsShieldState.HIDDEN
+        else -> KidsShieldState.NEUTRAL
+    }
 }
 
 class ChannelListViewModel(
@@ -64,7 +103,8 @@ class ChannelListViewModel(
     private val customSourceRepository: CustomSourceRepository,
     private val appStateRepository: AppStateRepository,
     private val favoritesRepository: FavoritesRepository,
-    private val historyRepository: HistoryRepository
+    private val historyRepository: HistoryRepository,
+    private val parentalControlRepository: ParentalControlRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ChannelListUiState())
@@ -103,6 +143,31 @@ class ChannelListViewModel(
                 _uiState.update { it.copy(viewMode = mode) }
             }
         }
+        viewModelScope.launch {
+            parentalControlRepository.state.collect { parental ->
+                _uiState.update {
+                    it.copy(
+                        hasParentPin = parental.hasPin,
+                        hiddenKidsUrls = parental.hiddenUrls,
+                        approvedKidsChannels = parental.approvedChannels,
+                        pinLockoutUntil = parental.lockoutUntil
+                    )
+                }
+            }
+        }
+        viewModelScope.launch {
+            parentalControlRepository.parentUnlocked.collect { unlocked ->
+                _uiState.update { it.copy(parentUnlocked = unlocked) }
+            }
+        }
+        // Only reacts to changes after launch — restoreLastState() handles the initial value.
+        viewModelScope.launch {
+            parentalControlRepository.state
+                .map { it.kidsModeEnabled }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect { enabled -> if (enabled) enterKidsMode() else exitKidsMode() }
+        }
         restoreLastState()
     }
 
@@ -117,11 +182,67 @@ class ChannelListViewModel(
             val language = PlaylistSource.LANGUAGES.firstOrNull { it.code == saved.languageCode } ?: PlaylistSource.LANGUAGES.first()
             _uiState.update { it.copy(region = region, category = category, language = language) }
 
-            when (saved.topMode) {
-                TopMode.CATALOG -> reloadCatalog()
-                TopMode.CUSTOM -> activateCustomSourcesMode(persist = false)
-                TopMode.FAVORITES -> selectFavoritesMode(persist = false)
-                TopMode.HISTORY -> selectHistoryMode(persist = false)
+            if (parentalControlRepository.state.first().kidsModeEnabled) {
+                enterKidsMode()
+            } else {
+                applyTopMode(saved.topMode)
+            }
+        }
+    }
+
+    private fun applyTopMode(mode: TopMode) {
+        when (mode) {
+            TopMode.CATALOG -> reloadCatalog()
+            TopMode.CUSTOM -> activateCustomSourcesMode(persist = false)
+            TopMode.FAVORITES -> selectFavoritesMode(persist = false)
+            TopMode.HISTORY -> selectHistoryMode(persist = false)
+        }
+    }
+
+    private fun enterKidsMode() {
+        localModeJob?.cancel()
+        _uiState.update {
+            it.copy(kidsMode = true, kidsTab = KidsTab.CHANNELS, filterText = "", customSourcesStatusMessage = null)
+        }
+        reloadKidsCatalog()
+    }
+
+    private fun exitKidsMode() {
+        localModeJob?.cancel()
+        _uiState.update { it.copy(kidsMode = false, kidsTab = KidsTab.CHANNELS) }
+        viewModelScope.launch { applyTopMode(appStateRepository.lastCatalogState.first().topMode) }
+    }
+
+    private fun reloadKidsCatalog() {
+        val requestId = ++loadRequestId
+        viewModelScope.launch {
+            setLoading(true)
+            val result = channelRepository.loadKidsCatalog()
+            if (requestId != loadRequestId) return@launch
+            _uiState.update {
+                it.copy(
+                    isLoading = false,
+                    kidsCatalog = (result as? SingleLoadResult.Success)?.channels ?: emptyList(),
+                    loadErrorMessage = (result as? SingleLoadResult.Failure)?.message
+                )
+            }
+            // Don't leave a non-kids channel playing once Kids Mode is on.
+            val state = _uiState.value
+            val selected = state.selectedChannel
+            if (selected != null && state.kidsVisibleChannels.none { it.streamUrl == selected.streamUrl }) {
+                clearSelectedChannel()
+            }
+        }
+    }
+
+    fun selectKidsTab(tab: KidsTab) {
+        localModeJob?.cancel()
+        _uiState.update { it.copy(kidsTab = tab) }
+        if (tab == KidsTab.FAVORITES) {
+            localModeJob = viewModelScope.launch {
+                favoritesRepository.favorites.collect { favorites ->
+                    _uiState.update { it.copy(loadedChannels = favorites) }
+                }
             }
         }
     }
@@ -168,6 +289,11 @@ class ChannelListViewModel(
      * clears Region/Category/Language back to "All" and any search text, whatever mode
      * (Favorites/History/Custom sources/filtered Catalog) the user was in. */
     fun resetToAllChannels() {
+        if (_uiState.value.kidsMode) {
+            selectKidsTab(KidsTab.CHANNELS)
+            setFilterText("")
+            return
+        }
         localModeJob?.cancel()
         _uiState.update {
             it.copy(
@@ -328,6 +454,37 @@ class ChannelListViewModel(
         viewModelScope.launch { appStateRepository.saveThemeMode(mode) }
     }
 
+    // --- Parental control ---
+
+    fun setParentPin(pin: String) {
+        viewModelScope.launch { parentalControlRepository.setPin(pin) }
+    }
+
+    fun verifyParentPin(pin: String, onResult: (PinResult) -> Unit) {
+        viewModelScope.launch { onResult(parentalControlRepository.verifyPin(pin)) }
+    }
+
+    fun lockParent() = parentalControlRepository.lock()
+
+    fun setKidsMode(enabled: Boolean) {
+        viewModelScope.launch { parentalControlRepository.setKidsMode(enabled) }
+    }
+
+    fun disableParentalControl() {
+        viewModelScope.launch { parentalControlRepository.disableParentalControl() }
+    }
+
+    fun onKidsShieldClick(channel: Channel) {
+        val shieldState = _uiState.value.kidsShieldStateFor(channel)
+        viewModelScope.launch {
+            when (shieldState) {
+                KidsShieldState.VISIBLE_IN_KIDS -> parentalControlRepository.hideFromKids(channel)
+                KidsShieldState.APPROVED -> parentalControlRepository.removeKidsApproval(channel)
+                KidsShieldState.HIDDEN, KidsShieldState.NEUTRAL -> parentalControlRepository.allowForKids(channel)
+            }
+        }
+    }
+
     // --- Custom source library CRUD, delegated to the repository, then reload if active. ---
 
     fun addCustomSource(label: String, url: String) {
@@ -365,7 +522,8 @@ class ChannelListViewModel(
             customSourceRepository: CustomSourceRepository,
             appStateRepository: AppStateRepository,
             favoritesRepository: FavoritesRepository,
-            historyRepository: HistoryRepository
+            historyRepository: HistoryRepository,
+            parentalControlRepository: ParentalControlRepository
         ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 ChannelListViewModel(
@@ -373,7 +531,8 @@ class ChannelListViewModel(
                     customSourceRepository,
                     appStateRepository,
                     favoritesRepository,
-                    historyRepository
+                    historyRepository,
+                    parentalControlRepository
                 )
             }
         }

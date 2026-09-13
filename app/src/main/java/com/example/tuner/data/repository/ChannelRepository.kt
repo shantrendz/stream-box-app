@@ -6,6 +6,7 @@ import com.example.tuner.data.parser.M3UParser
 import com.example.tuner.data.remote.PlaylistApi
 import com.example.tuner.data.remote.PlaylistFetchResult
 import com.example.tuner.domain.PlaylistSource
+import com.example.tuner.parental.KidsVisibility
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 
@@ -86,6 +87,13 @@ class ChannelRepository(
         }
 
         SingleLoadResult.Success(channels)
+    }
+
+    /** Kids Mode base list: iptv-org's Kids and Animation category playlists, merged. */
+    suspend fun loadKidsCatalog(): SingleLoadResult = coroutineScope {
+        val kids = async { loadAndParse(PlaylistApi.categoryUrl("kids"), KidsVisibility.KIDS_SOURCE_LABEL) }
+        val animation = async { loadAndParse(PlaylistApi.categoryUrl("animation"), KidsVisibility.KIDS_SOURCE_LABEL) }
+        KidsVisibility.mergeKidsPlaylists(kids.await(), animation.await())
     }
 
     /**

@@ -45,7 +45,8 @@ class MainActivity : FragmentActivity() {
                     customSourceRepository = app.customSourceRepository,
                     appStateRepository = app.appStateRepository,
                     favoritesRepository = app.favoritesRepository,
-                    historyRepository = app.historyRepository
+                    historyRepository = app.historyRepository,
+                    parentalControlRepository = app.parentalControlRepository
                 )
             )
             val uiState by viewModel.uiState.collectAsState()
