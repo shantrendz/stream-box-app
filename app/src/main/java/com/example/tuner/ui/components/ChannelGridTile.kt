@@ -5,10 +5,13 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
@@ -28,6 +31,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.tuner.data.model.Channel
+import com.example.tuner.livecheck.LiveStatus
 import com.example.tuner.parental.KidsShieldState
 import com.example.tuner.ui.parental.KidsShieldButton
 import com.example.tuner.ui.theme.TunerAmber
@@ -47,6 +51,7 @@ fun ChannelGridTile(
     isFavorite: Boolean,
     onClick: () -> Unit,
     onToggleFavorite: () -> Unit,
+    liveStatus: LiveStatus = LiveStatus.UNCHECKED,
     shieldState: KidsShieldState? = null,
     onShieldClick: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -84,16 +89,22 @@ fun ChannelGridTile(
                 }
             }
 
-            Text(
-                text = channel.name,
-                style = MaterialTheme.typography.labelMedium,
-                color = if (isSelected) TunerAmber else TunerTextPrimary,
-                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.padding(top = 6.dp)
-            )
+            ) {
+                LiveStatusDot(status = liveStatus, size = 7.dp)
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    text = channel.name,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (isSelected) TunerAmber else TunerTextPrimary,
+                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
 
         // Anchored to the tile's actual top-right corner, not just the logo area within it.

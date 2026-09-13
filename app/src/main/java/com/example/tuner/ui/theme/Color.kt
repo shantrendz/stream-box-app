@@ -24,6 +24,7 @@ data class TunerPalette(
     val amber: Color,
     val cyan: Color,
     val red: Color,
+    val green: Color,
     val amberTint: Color,
     val redTint: Color,
     val gradientTop: Color,
@@ -39,6 +40,7 @@ val DarkTunerPalette = TunerPalette(
     amber = Color(0xFF7C6CF6),
     cyan = Color(0xFF4E8DF7),
     red = Color(0xFFFF4B5C),
+    green = Color(0xFF3DDC84),
     amberTint = Color(0x267C6CF6),
     redTint = Color(0x26FF4B5C),
     gradientTop = Color(0xFF1B1740),
@@ -56,6 +58,7 @@ val LightTunerPalette = TunerPalette(
     amber = Color(0xFF5B45E0),
     cyan = Color(0xFF2464C4),
     red = Color(0xFFC62839),
+    green = Color(0xFF1E8E4E),
     amberTint = Color(0x265B45E0),
     redTint = Color(0x26C62839),
     gradientTop = Color(0xFFDFDBF5),
@@ -74,6 +77,7 @@ val TunerTextSecondary: Color @Composable get() = LocalTunerPalette.current.text
 val TunerAmber: Color @Composable get() = LocalTunerPalette.current.amber
 val TunerCyan: Color @Composable get() = LocalTunerPalette.current.cyan
 val TunerRed: Color @Composable get() = LocalTunerPalette.current.red
+val TunerGreen: Color @Composable get() = LocalTunerPalette.current.green
 val TunerAmberTint: Color @Composable get() = LocalTunerPalette.current.amberTint
 val TunerRedTint: Color @Composable get() = LocalTunerPalette.current.redTint
 val TunerGradientTop: Color @Composable get() = LocalTunerPalette.current.gradientTop

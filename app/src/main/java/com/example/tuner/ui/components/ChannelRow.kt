@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
@@ -31,11 +30,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.tuner.data.model.Channel
+import com.example.tuner.livecheck.LiveStatus
 import com.example.tuner.parental.KidsShieldState
 import com.example.tuner.ui.parental.KidsShieldButton
 import com.example.tuner.ui.theme.TunerAmber
 import com.example.tuner.ui.theme.TunerAmberTint
-import com.example.tuner.ui.theme.TunerCyan
 import com.example.tuner.ui.theme.TunerOutline
 import com.example.tuner.ui.theme.TunerTextPrimary
 import com.example.tuner.ui.theme.TunerTextSecondary
@@ -57,6 +56,7 @@ fun ChannelRow(
     showSourceTag: Boolean,
     onClick: () -> Unit,
     onToggleFavorite: () -> Unit,
+    liveStatus: LiveStatus = LiveStatus.UNCHECKED,
     shieldState: KidsShieldState? = null,
     onShieldClick: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -90,12 +90,7 @@ fun ChannelRow(
 
         Spacer(Modifier.width(10.dp))
 
-        Box(
-            modifier = Modifier
-                .size(7.dp)
-                .clip(CircleShape)
-                .background(TunerCyan)
-        )
+        LiveStatusDot(status = liveStatus)
 
         Spacer(Modifier.width(10.dp))
 
