@@ -39,6 +39,8 @@ fun ParentalAuthFlow(
     var chosenPin by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
     var isError by remember { mutableStateOf(false) }
+    var verifying by remember { mutableStateOf(false) }
+    var finished by remember { mutableStateOf(false) }
 
     fun goTo(next: FlowStep, newMessage: String? = null, error: Boolean = false) {
         step = next
@@ -46,7 +48,13 @@ fun ParentalAuthFlow(
         isError = error
     }
 
-    val cancel = { onFinished(false) }
+    fun finish(success: Boolean) {
+        if (finished) return
+        finished = true
+        onFinished(success)
+    }
+
+    val cancel = { finish(false) }
 
     when (step) {
         FlowStep.SETUP_CHALLENGE -> MathChallengeDialog(
@@ -65,22 +73,28 @@ fun ParentalAuthFlow(
             isError = isError,
             lockoutUntil = lockoutUntil,
             onPinEntered = { pin ->
-                onVerifyPin(pin) { result ->
-                    when (result) {
-                        PinResult.Ok -> onFinished(true)
-                        is PinResult.Wrong -> {
-                            message = "Wrong PIN — ${result.attemptsLeft} tries left"
-                            isError = true
-                        }
-                        is PinResult.LockedOut -> {
-                            message = null
-                            isError = true
+                if (!verifying) {
+                    verifying = true
+                    onVerifyPin(pin) { result ->
+                        verifying = false
+                        if (finished || step != FlowStep.UNLOCK) return@onVerifyPin
+                        when (result) {
+                            PinResult.Ok -> finish(true)
+                            is PinResult.Wrong -> {
+                                message = "Wrong PIN — ${result.attemptsLeft} tries left"
+                                isError = true
+                            }
+                            is PinResult.LockedOut -> {
+                                message = "Too many wrong tries — try again shortly"
+                                isError = true
+                            }
                         }
                     }
                 }
             },
             onDismiss = cancel,
-            onForgotPin = { goTo(FlowStep.RECOVERY_CHALLENGE) }
+            onForgotPin = { goTo(FlowStep.RECOVERY_CHALLENGE) },
+            inputEnabled = !verifying
         )
         FlowStep.CHOOSE_PIN -> PinPadDialog(
             title = "Choose a 4-digit PIN",
@@ -101,7 +115,7 @@ fun ParentalAuthFlow(
             onPinEntered = { pin ->
                 if (pin == chosenPin) {
                     onSetPin(pin)
-                    onFinished(true)
+                    finish(true)
                 } else {
                     chosenPin = ""
                     goTo(FlowStep.CHOOSE_PIN, "PINs didn't match — choose again", error = true)

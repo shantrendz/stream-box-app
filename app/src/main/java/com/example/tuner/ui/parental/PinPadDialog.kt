@@ -126,7 +126,8 @@ fun PinPadDialog(
     lockoutUntil: Long,
     onPinEntered: (String) -> Unit,
     onDismiss: () -> Unit,
-    onForgotPin: (() -> Unit)? = null
+    onForgotPin: (() -> Unit)? = null,
+    inputEnabled: Boolean = true
 ) {
     var pin by remember { mutableStateOf("") }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -163,7 +164,7 @@ fun PinPadDialog(
             Spacer(Modifier.height(12.dp))
         }
         NumericKeypad(
-            enabled = !lockedOut,
+            enabled = !lockedOut && inputEnabled,
             onDigit = { digit ->
                 if (pin.length < PIN_LENGTH) {
                     pin += digit
