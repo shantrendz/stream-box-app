@@ -42,6 +42,8 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.UnfoldLess
 import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material.icons.automirrored.filled.ViewList
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -53,6 +55,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -60,6 +63,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -68,11 +72,13 @@ import kotlinx.coroutines.launch
 import com.example.tuner.data.model.Channel
 import com.example.tuner.data.repository.TopMode
 import com.example.tuner.data.repository.favoriteKey
+import com.example.tuner.livecheck.LiveStatus
 import com.example.tuner.parental.KidsShieldState
 import com.example.tuner.ui.components.AppIcon
 import com.example.tuner.ui.components.ChannelGridTile
 import com.example.tuner.ui.components.ChannelRow
 import com.example.tuner.ui.components.GroupHeader
+import com.example.tuner.ui.components.LiveStatusDot
 import com.example.tuner.ui.components.RegionCategoryToolbar
 import com.example.tuner.ui.parental.KidsTabsToolbar
 import com.example.tuner.ui.parental.ParentalAuthFlow
@@ -80,14 +86,32 @@ import com.example.tuner.ui.parental.ParentalFlowStart
 import com.example.tuner.ui.player.FullScreenPlayerHost
 import com.example.tuner.ui.player.PlayerScreen
 import com.example.tuner.ui.theme.TunerAmber
+import com.example.tuner.ui.theme.TunerAmberTint
 import com.example.tuner.ui.theme.TunerBackground
 import com.example.tuner.ui.theme.TunerGradientBottom
 import com.example.tuner.ui.theme.TunerGradientTop
 import com.example.tuner.ui.theme.TunerOutline
 import com.example.tuner.ui.theme.TunerTextPrimary
 import com.example.tuner.ui.theme.TunerTextSecondary
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 
 private const val WIDE_LAYOUT_MIN_DP = 700
+private const val VISIBLE_REPORT_DEBOUNCE_MILLIS = 300L
+private const val CHANNEL_KEY_PREFIX = "ch:"
+
+/** Lazy item keys look like "ch:<number>:<source>:<url>"; the number maps back to a stream URL. */
+private fun visibleUrlsFrom(keys: List<Any>, urlByNumber: Map<Int, String>): List<String> =
+    keys.mapNotNull { key ->
+        (key as? String)
+            ?.takeIf { it.startsWith(CHANNEL_KEY_PREFIX) }
+            ?.removePrefix(CHANNEL_KEY_PREFIX)
+            ?.substringBefore(':')
+            ?.toIntOrNull()
+            ?.let(urlByNumber::get)
+    }
 
 @Composable
 fun ChannelListScreen(
@@ -346,6 +370,45 @@ private fun ChannelListPane(
                 .padding(horizontal = 8.dp, vertical = 2.dp)
         )
 
+        val matched = uiState.searchMatchedChannels
+        val checkedCount = matched.count {
+            val status = uiState.liveStatuses[it.streamUrl]
+            status == LiveStatus.WORKING || status == LiveStatus.NOT_WORKING
+        }
+        val stillChecking = uiState.liveOnly && matched.isNotEmpty() && checkedCount < matched.size
+
+        // While Live only is on, keep the whole list queued even if nothing is visible yet.
+        LaunchedEffect(uiState.liveOnly, matched.size, uiState.topMode, uiState.kidsMode, uiState.kidsTab) {
+            if (uiState.liveOnly) viewModel.requestLiveChecks(emptyList())
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            FilterChip(
+                selected = uiState.liveOnly,
+                onClick = { viewModel.setLiveOnly(!uiState.liveOnly) },
+                label = { Text("Live only") },
+                leadingIcon = { LiveStatusDot(status = LiveStatus.WORKING) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = TunerAmberTint,
+                    selectedLabelColor = TunerAmber,
+                    labelColor = TunerTextPrimary
+                )
+            )
+            Spacer(Modifier.width(10.dp))
+            if (stillChecking) {
+                Text(
+                    text = "Checking $checkedCount / ${matched.size}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TunerTextSecondary
+                )
+            }
+        }
+
         if (uiState.isCustomSourcesMode) {
             Row(
                 modifier = Modifier
@@ -408,11 +471,18 @@ private fun ChannelListPane(
             favoriteKeys = uiState.favoriteKeys,
             isSearching = uiState.filterText.isNotBlank(),
             statusMessage = uiState.customSourcesStatusMessage,
-            emptyMessage = if (uiState.kidsMode) kidsEmptyMessageFor(uiState.kidsTab) else emptyMessageFor(uiState.topMode),
+            emptyMessage = when {
+                stillChecking -> "CHECKING CHANNELS…"
+                uiState.liveOnly && matched.isNotEmpty() -> "NO WORKING CHANNELS IN THIS LIST"
+                uiState.kidsMode -> kidsEmptyMessageFor(uiState.kidsTab)
+                else -> emptyMessageFor(uiState.topMode)
+            },
             onSelect = viewModel::selectChannel,
             onToggleFavorite = viewModel::toggleFavorite,
             shieldStateFor = if (uiState.parentUnlocked) uiState::kidsShieldStateFor else null,
             onShieldClick = viewModel::onKidsShieldClick,
+            liveStatusOf = uiState::liveStatusOf,
+            onVisibleUrlsChanged = viewModel::requestLiveChecks,
             modifier = Modifier.fillMaxSize()
         )
     }
@@ -431,6 +501,7 @@ private fun kidsEmptyMessageFor(tab: KidsTab): String = when (tab) {
 
 private data class NumberedChannel(val index: Int, val channel: Channel)
 
+@OptIn(FlowPreview::class)
 @Composable
 private fun ChannelList(
     channels: List<Channel>,
@@ -446,6 +517,8 @@ private fun ChannelList(
     onToggleFavorite: (Channel) -> Unit,
     shieldStateFor: ((Channel) -> KidsShieldState)?,
     onShieldClick: (Channel) -> Unit,
+    liveStatusOf: (Channel) -> LiveStatus,
+    onVisibleUrlsChanged: (List<String>) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val grouped = remember(channels, groupBySource) {
@@ -456,6 +529,10 @@ private fun ChannelList(
             .map { channel -> counter++; NumberedChannel(counter, channel) }
             .groupBy { groupKeySelector(it.channel) }
             .toSortedMap()
+    }
+
+    val urlByNumber = remember(grouped) {
+        grouped.values.flatten().associate { it.index to it.channel.streamUrl }
     }
 
     // All categories start open; the user collapses ones they don't want to see. A search
@@ -522,6 +599,13 @@ private fun ChannelList(
         Box(Modifier.weight(1f)) {
         if (viewMode == ChannelViewMode.GRID) {
             val gridState = rememberLazyGridState()
+            LaunchedEffect(gridState, urlByNumber) {
+                snapshotFlow { gridState.layoutInfo.visibleItemsInfo.map { it.key } }
+                    .map { visibleUrlsFrom(it, urlByNumber) }
+                    .distinctUntilChanged()
+                    .debounce(VISIBLE_REPORT_DEBOUNCE_MILLIS)
+                    .collect { onVisibleUrlsChanged(it) }
+            }
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 96.dp),
                 state = gridState,
@@ -539,7 +623,7 @@ private fun ChannelList(
                         )
                     }
                     if (isExpanded) {
-                        items(numberedChannels, key = { "${it.channel.source}:${it.channel.streamUrl}:${it.index}" }) { numbered ->
+                        items(numberedChannels, key = { "$CHANNEL_KEY_PREFIX${it.index}:${it.channel.source}:${it.channel.streamUrl}" }) { numbered ->
                             ChannelGridTile(
                                 channel = numbered.channel,
                                 isSelected = numbered.channel == selectedChannel,
@@ -548,6 +632,7 @@ private fun ChannelList(
                                 onToggleFavorite = { onToggleFavorite(numbered.channel) },
                                 shieldState = shieldStateFor?.invoke(numbered.channel),
                                 onShieldClick = { onShieldClick(numbered.channel) },
+                                liveStatus = liveStatusOf(numbered.channel),
                                 modifier = Modifier.padding(4.dp)
                             )
                         }
@@ -560,6 +645,13 @@ private fun ChannelList(
             )
         } else {
             val listState = rememberLazyListState()
+            LaunchedEffect(listState, urlByNumber) {
+                snapshotFlow { listState.layoutInfo.visibleItemsInfo.map { it.key } }
+                    .map { visibleUrlsFrom(it, urlByNumber) }
+                    .distinctUntilChanged()
+                    .debounce(VISIBLE_REPORT_DEBOUNCE_MILLIS)
+                    .collect { onVisibleUrlsChanged(it) }
+            }
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
@@ -576,7 +668,7 @@ private fun ChannelList(
                         )
                     }
                     if (isExpanded) {
-                        items(numberedChannels, key = { "${it.channel.source}:${it.channel.streamUrl}:${it.index}" }) { numbered ->
+                        items(numberedChannels, key = { "$CHANNEL_KEY_PREFIX${it.index}:${it.channel.source}:${it.channel.streamUrl}" }) { numbered ->
                             ChannelRow(
                                 index = numbered.index,
                                 channel = numbered.channel,
@@ -586,7 +678,8 @@ private fun ChannelList(
                                 onClick = { onSelect(numbered.channel) },
                                 onToggleFavorite = { onToggleFavorite(numbered.channel) },
                                 shieldState = shieldStateFor?.invoke(numbered.channel),
-                                onShieldClick = { onShieldClick(numbered.channel) }
+                                onShieldClick = { onShieldClick(numbered.channel) },
+                                liveStatus = liveStatusOf(numbered.channel)
                             )
                         }
                     }

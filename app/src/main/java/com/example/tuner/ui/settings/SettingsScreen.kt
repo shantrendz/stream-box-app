@@ -27,6 +27,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Switch
@@ -173,6 +174,27 @@ fun SettingsScreen(
         Spacer(Modifier.height(28.dp))
         SectionHeader("Parental Control")
         ParentalControlSection(uiState = uiState, viewModel = viewModel)
+
+        Spacer(Modifier.height(28.dp))
+        SectionHeader("Live Check")
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Clear check results", style = MaterialTheme.typography.bodyLarge, color = TunerTextPrimary)
+                Text(
+                    "Forgets which channels were working so they're checked again.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TunerTextSecondary
+                )
+            }
+            OutlinedButton(onClick = viewModel::clearLiveCheckResults) {
+                Text("CLEAR", color = TunerTextPrimary)
+            }
+        }
 
         Spacer(Modifier.height(28.dp))
         SectionHeader("About")
